@@ -140,6 +140,7 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 - **Engine scope (decided via Hemant):** open-source engine **only** — Claude Code excluded. Already consistent with charter §4.2 (Claude Code/Cursor portability is out of scope). No ADR required, just a recorded principle.
 - **Charter v1.0 confirmed by Hemant** (point 1 of the group message). His role/cadence is still vague ("seems good" — needs a concrete answer for the plan).
 - **Funding:** the project is paid by Massimiliano **and Gaurav** (Gaurav = Inqubit Systems and Technologies, co-funder). His charter confirmation is therefore a funding gate, not a formality — POC start is blocked until his OK.
+- **Standby (human decision, 2026-08-27):** wait for Gaurav's Project Charter confirmation before any further action — no BUILD, no POC start. State otherwise unchanged.
 
 **Open — waiting on the human, raise these at the next session start:**
 
