@@ -138,14 +138,16 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 - `PROJECT_MANAGEMENT_PLAN.md` → **English** (translated, content unchanged).
 - "AISET Thin POC" → reduced and approved as the **OpenCode Lifecycle Spike**. The spike is now tracked as the GitHub milestone "OpenCode Lifecycle POC" (Bun server + SQLite + OpenCodeAdapter; core experiment: launch multi-agent OpenCode → kill → verify what survives, incl. Bun restart). Outcome GREEN/AMBER/RED recorded as an ADR. Plan in [SPIKE_OPENCODE_LIFECYCLE_PLAN.md](SPIKE_OPENCODE_LIFECYCLE_PLAN.md), **awaiting approval** — no build before a one-line OK. Estimate: Hemant 3-4 h (my note: 4-6 h realistic).
 - **Engine scope (decided via Hemant):** open-source engine **only** — Claude Code excluded. Already consistent with charter §4.2 (Claude Code/Cursor portability is out of scope). No ADR required, just a recorded principle.
+- **Charter v1.0 confirmed by Hemant** (point 1 of the group message). His role/cadence is still vague ("seems good" — needs a concrete answer for the plan).
+- **Funding:** the project is paid by Massimiliano **and Gaurav** (Gaurav = Inqubit Systems and Technologies, co-funder). His charter confirmation is therefore a funding gate, not a formality — POC start is blocked until his OK.
 
 **Open — waiting on the human, raise these at the next session start:**
 
 1. **OK on the WP1 plan.** Blocks all BUILD.
 2. **OK on the Spike plan / milestone** (see above). Not blocking WP1.
-3. **Charter v1.0 confirmation from Hemant and Gaurav.** Hemant engaged on scope and estimate but has not explicitly confirmed the charter. Gaurav has not replied yet. Blocks finalizing the management plan to v1.0.
-4. **TBD #1** (plan §12) — real role and expectations of Gaurav/Hemant (affects reporting cadence and authority).
-5. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
+3. **Charter v1.0 confirmation from Gaurav** (Inqubit, co-funder). Hemant already confirmed. Blocks POC start and finalizing the management plan to v1.0.
+4. **TBD #1** (plan §12) — concrete role and cadence of Gaurav/Hemant. Partially resolved: Gaurav = co-funder; still need reporting cadence and decision authority for both.
+5. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Now tied to the funding agreement between Massimiliano and Gaurav. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
 6. **TBD #4** (plan §12) — baseline sample task set: does it already exist or must it be built? Blocks WP3, which is on the critical path; due by week 2.
 
 **Proposed this session, not yet approved and not yet ADRs:**
