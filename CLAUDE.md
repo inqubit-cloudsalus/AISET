@@ -128,18 +128,24 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 **Last updated:** 2026-08-27
 
 - **Active WP:** WP1 — Documentation kernel. State: **AWAITING PLAN APPROVAL**. The plan is in [WP1_PLAN.md](WP1_PLAN.md). BUILD has not started and must not start before a one-line human OK.
-- **Hours:** WP1 estimated at 22 h agent-side against the 24 h budget of plan §3.1; ~3 h human. Spent so far: 0 h of build, ~1.5 h human (estimate) across the sessions of 2026-08-25 and 2026-08-26.
-- **Repository:** published at `inqubit-cloudsalus/AISET` (public) with the initial commit of 2026-08-27: `CLAUDE.md`, `PROJECT_CHARTER.md`, `PROJECT_MANAGEMENT_PLAN.md`, `README.md`, `.gitignore`, `WP1_PLAN.md`. The §2 scaffold does not exist yet — it is created during WP1 BUILD.
+- **Hours:** convention confirmed — the 24 h of WP1 (and the 104 h total) are **human** hours; agent hours and API cost are tracked separately as construction cost (plan §5). WP1 estimated at 22 h agent-side + ~3 h human against the 24 h budget. Spent so far: 0 h of build, ~1.5 h human (estimate) across the sessions of 2026-08-25 and 2026-08-26.
+- **Repository:** published at `inqubit-cloudsalus/AISET` (public) with the initial commit of 2026-08-27: `CLAUDE.md`, `PROJECT_CHARTER.md`, `PROJECT_MANAGEMENT_PLAN.md`, `README.md`, `.gitignore`, `WP1_PLAN.md`. License: **MIT** (`LICENSE`). `PROJECT_MANAGEMENT_PLAN.md` is now in English. The §2 scaffold does not exist yet — it is created during WP1 BUILD.
+
+**Decided this session (2026-08-27):**
+
+- Hour convention → **human hours** (confirmed; reporting convention, no ADR required).
+- License → **MIT** (`LICENSE` added, README updated).
+- `PROJECT_MANAGEMENT_PLAN.md` → **English** (translated, content unchanged).
+- "AISET Thin POC" → reduced and approved as the **OpenCode Lifecycle Spike** (~8-10 h agent timebox, Bun + SQLite + adapter, GREEN/AMBER/RED outcome recorded as an ADR). Plan in [SPIKE_OPENCODE_LIFECYCLE_PLAN.md](SPIKE_OPENCODE_LIFECYCLE_PLAN.md), **awaiting approval** — no build before a one-line OK.
 
 **Open — waiting on the human, raise these at the next session start:**
 
 1. **OK on the WP1 plan.** Blocks all BUILD.
-2. **TBD #4** (plan §12) — baseline sample task set: does it already exist or must it be built? Blocks WP3, which is on the critical path; due by week 2.
-3. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
-4. **Hour accounting convention.** The 24 h of WP1 are read as *human* hours, since the per-WP hours of plan §3.1 sum to the 104 h human budget. Confirm or correct — it changes reporting for every WP.
+2. **OK on the Spike plan** (see above). Not blocking WP1.
+3. **TBD #4** (plan §12) — baseline sample task set: does it already exist or must it be built? Blocks WP3, which is on the critical path; due by week 2.
+4. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
 
 **Proposed this session, not yet approved and not yet ADRs:**
 
 - The `agentic-skills-playbook` repo (private, `inqubit-cloudsalus`) stays separate from AISET: it is a skills library, with no metrics, schemas, run logging or eval suite, so it does not shorten the kernel work. Its Kepner-Tregoe RCA prompt is proposed as the designated failure-analysis method, referenced by link from the FAILURE_TAXONOMY stub. Whether AISET agent specifications are published there is a WP4 decision requiring an ADR.
 - Sample task for the WP1 demo: T-001, the coherence checker itself (see WP1_PLAN.md).
-- **AISET Thin POC** (external brief, 2026-08-27): the de-risking question is right — can AISET control and recover OpenCode execution lifecycles — but the proposed scope is not thin (full Next.js UI), has no hour estimate, no pre-defined validation demo, and no slot in the WP sequence. Recommendation on the table: reduce it to an "OpenCode Lifecycle Spike" (script-driven, Bun + SQLite + adapter, GREEN/AMBER/RED outcome recorded as an ADR, ~8-10 h agent timebox), run before or alongside WP1 BUILD. Needs a human decision; not approved.

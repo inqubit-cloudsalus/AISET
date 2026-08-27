@@ -2,164 +2,164 @@
 
 ## AI Software Engineering Team (AISET)
 
-| Campo | Valore |
+| Field | Value |
 | :---- | :---- |
-| **Versione** | 1.0 (bozza — 4 punti TBD in sez. 12\) |
-| **Data** | 25 agosto 2026 |
-| **Riferimento** | PROJECT\_CHARTER v1.0 |
+| **Version** | 1.0 (draft — 4 TBD points in sec. 12) |
+| **Date** | August 25, 2026 |
+| **Reference** | PROJECT_CHARTER v1.0 |
 | **Project Manager** | Massimiliano Corvino |
-| **Approvazione richiesta** | Sponsor \+ Gaurav, Hemant |
+| **Approval required** | Sponsor + Gaurav, Hemant |
 
 ---
 
-## 1\. Introduzione
+## 1. Introduction
 
-Questo piano definisce come il progetto AISET sarà eseguito, monitorato, controllato e chiuso, in attuazione del Project Charter v1.0. In caso di conflitto tra questo piano e il charter, prevale il charter; le modifiche al charter seguono la sua sez. 11\.
+This plan defines how the AISET project will be executed, monitored, controlled, and closed, in implementation of Project Charter v1.0. In case of conflict between this plan and the charter, the charter prevails; charter changes follow its section 11.
 
-**Decisione fondante del piano (registrata):** lo sponsor ha scelto di mantenere l'orizzonte di 6 mesi con disponibilità \< 5 h/settimana (\~104 ore totali stimate), **accettando formalmente il rischio di schedule** a fronte di una stima di effort del piano completo di 250-400 ore. Il piano gestisce questa scelta con tre strumenti: timeboxing rigido, scala di riduzione dello scope predefinita (sez. 3.3), e uso degli agenti AI per costruire il sistema stesso (sez. 7.2).
+**Founding decision of the plan (recorded):** the sponsor chose to keep the 6-month horizon with availability < 5 h/week (~104 total estimated hours), **formally accepting the schedule risk** against a full-plan effort estimate of 250-400 hours. The plan manages this choice with three instruments: rigid timeboxing, a pre-defined scope-shedding ladder (sec. 3.3), and the use of AI agents to build the system itself (sec. 7.2).
 
-**Principio operativo:** le date non si spostano; lo scope flette. Ogni milestone è un timebox con exit criteria distinti in **minimi** (obbligatori) e **target** (desiderabili).
+**Operating principle:** dates do not move; scope flexes. Every milestone is a timebox with exit criteria distinguished into **minimum** (mandatory) and **target** (desirable).
 
-## 2\. Baseline di progetto
+## 2. Project baseline
 
-- **Scope baseline:** deliverable D1-D7 del charter, con priorità e riducibilità definite in sez. 3\.  
-- **Schedule baseline:** 26 settimane, milestone come da sez. 4\.  
-- **Cost baseline:** budget ore 104 h (\~4 h/sett. × 26); budget economico AI: TBD (sez. 12).  
-- Le baseline sono modificabili solo tramite change control (sez. 11).
+- **Scope baseline:** deliverables D1-D7 of the charter, with priority and reducibility defined in sec. 3.
+- **Schedule baseline:** 26 weeks, milestones as per sec. 4.
+- **Cost baseline:** effort budget 104 h (~4 h/wk × 26); AI budget: TBD (sec. 12).
+- The baselines are changeable only through change control (sec. 11).
 
-## 3\. Gestione dell'ambito
+## 3. Scope management
 
-### 3.1 WBS di primo livello
+### 3.1 First-level WBS
 
-| WP | Contenuto | Deliverable | Ore stimate |
+| WP | Content | Deliverable | Estimated hours |
 | :---- | :---- | :---- | :---- |
-| WP1 — Kernel documentale | Metrics, Agent Contract, Artifacts, Workflow; stub degli altri documenti | D1 (parziale), D2 (parziale) | 24 |
-| WP2 — Schemi e template | run.schema.json \+ specification.schema.json completi; altri in versione minima; template PR evidence-driven e failure issue | D2 | 10 |
-| WP3 — Baseline umana | Selezione task campione, misurazione, report | D6 | 8 |
-| WP4 — Agenti V0.1 | Specifiche platform-agnostic \+ implementazione OpenCode | D3, D4 | 26 |
-| WP5 — Infrastruttura di misura | Logging run, replay corpus, eval suite minima, baseline eval | D5 | 22 |
-| WP6 — Esercizio e milestone | Uso su task reali, report M2 e M3, decisioni organizzative | D7 | 14 |
-| **Totale** |  |  | **104** |
+| WP1 — Documentation kernel | Metrics, Agent Contract, Artifacts, Workflow; stubs of the other documents | D1 (partial), D2 (partial) | 24 |
+| WP2 — Schemas and templates | run.schema.json + specification.schema.json complete; others in minimum version; evidence-driven PR and failure-issue templates | D2 | 10 |
+| WP3 — Human baseline | Sample task selection, measurement, report | D6 | 8 |
+| WP4 — Agents V0.1 | Platform-agnostic specifications + OpenCode implementation | D3, D4 | 26 |
+| WP5 — Measurement infrastructure | Run logging, replay corpus, minimal eval suite, eval baseline | D5 | 22 |
+| WP6 — Exercise & milestones | Use on real tasks, M2 and M3 reports, organizational decisions | D7 | 14 |
+| **Total** |  |  | **104** |
 
-Il vincolo di charter (30-40% su misura) è rispettato: WP5 \+ quota misurazione di WP3/WP6 ≈ 34 ore.
+The charter constraint (30-40% on measurement) is respected: WP5 + the measurement share of WP3/WP6 ≈ 34 hours.
 
-### 3.2 Definition of Done dei work package
+### 3.2 Definition of Done of the work packages
 
-Un WP è chiuso quando i suoi deliverable superano i criteri definiti in DoR/DoD (documento del kernel) e sono versionati nel repository. Nessun WP si chiude "a voce".
+A WP is closed when its deliverables pass the criteria defined in DoR/DoD (kernel document) and are versioned in the repository. No WP closes "verbally".
 
-### 3.3 Scala di riduzione dello scope (scope-shedding ladder)
+### 3.3 Scope-shedding ladder
 
-Se a fine timebox gli exit criteria minimi non sono raggiungibili, lo scope si riduce in quest'ordine predefinito — deciso ora, a mente fredda, non durante la crisi:
+If at the end of a timebox the minimum exit criteria are not achievable, scope reduces in this pre-defined order — decided now, in cold blood, not during the crisis:
 
-1. **Gradino 1:** eval suite ridotta a 5 scenari; documenti non-kernel restano stub (ARCHITECTURE, TEAM esteso, SECURITY esteso)  
-2. **Gradino 2:** agenti V0.1 da 5 a 3 (Orchestrator+Spec fusi, Developer, Reviewer+QA fusi) — la fusione è essa stessa un esperimento organizzativo registrato  
-3. **Gradino 3:** M3 ridotta a dimostrazione di 2 workflow concorrenti su task semplici, decisioni organizzative rinviate  
-4. **Gradino 4 (ultimo):** M3 esce dall'orizzonte; il progetto chiude a M2 con report finale e proposta di estensione
+1. **Step 1:** eval suite reduced to 5 scenarios; non-kernel documents remain stubs (ARCHITECTURE, extended TEAM, extended SECURITY)
+2. **Step 2:** V0.1 agents from 5 to 3 (Orchestrator+Spec merged, Developer, Reviewer+QA merged) — the merge is itself a recorded organizational experiment
+3. **Step 3:** M3 reduced to a demonstration of 2 concurrent workflows on simple tasks, organizational decisions deferred
+4. **Step 4 (last):** M3 exits the horizon; the project closes at M2 with a final report and an extension proposal
 
-**Non riducibili in nessun caso:** logging obbligatorio dei run (run.schema.json), replay corpus, guardrail operativi, baseline M1. Sono il nucleo che rende il progetto diverso da una collezione di prompt.
+**Non-reducible in any case:** mandatory run logging (run.schema.json), replay corpus, operational guardrails, M1 baseline. They are the core that makes the project different from a collection of prompts.
 
-## 4\. Gestione dei tempi
+## 4. Time management
 
-### 4.1 Schedule (26 settimane)
+### 4.1 Schedule (26 weeks)
 
-| Settimane | Fase | Contenuto | Exit criteria minimi |
+| Weeks | Phase | Content | Minimum exit criteria |
 | :---- | :---- | :---- | :---- |
-| 1-6 | **M0 \+ M1** | WP1, WP2, WP3 in parallelo | Kernel minimo approvato (Metrics, Agent Contract, Artifacts, Workflow); run.schema.json attivo; baseline documentata |
-| 7-10 | **M2a — Costruzione** | WP4: specifiche \+ implementazione agenti | 3-5 agenti operativi su task di prova; logging attivo dal primo run |
-| 11-17 | **M2b — Esercizio** | WP5 \+ WP6: task reali, eval suite, replay corpus | ≥2× su almeno una categoria di task vs baseline; corpus ≥90% dei task; passaggio a evidence mode |
-| 18-24 | **M3 — Parallelismo** | WP6: workflow concorrenti | 2-3 workflow paralleli entro budget attenzione su task semplici |
-| 25-26 | **Chiusura** | Report M3, lessons learned, proposta M4 | Report finale con confronto metriche e decisione su revisione charter per M4 |
+| 1-6 | **M0 + M1** | WP1, WP2, WP3 in parallel | Minimum kernel approved (Metrics, Agent Contract, Artifacts, Workflow); run.schema.json active; baseline documented |
+| 7-10 | **M2a — Construction** | WP4: agent specifications + implementation | 3-5 agents operational on trial tasks; logging active from the first run |
+| 11-17 | **M2b — Exercise** | WP5 + WP6: real tasks, eval suite, replay corpus | ≥2× on at least one task category vs baseline; corpus ≥90% of tasks; transition to evidence mode |
+| 18-24 | **M3 — Parallelism** | WP6: concurrent workflows | 2-3 parallel workflows within the attention budget on simple tasks |
+| 25-26 | **Closure** | M3 report, lessons learned, M4 proposal | Final report with metric comparison and decision on charter revision for M4 |
 
-### 4.2 Controllo dello schedule
+### 4.2 Schedule control
 
-- Verifica di avanzamento settimanale (integrata nel report, sez. 8\) su GitHub Projects: ore spese, WP in corso, scostamento.  
-- **Trigger di de-scoping:** se a metà timebox il completamento stimato del WP critico è \< 50%, si applica il gradino successivo della scala 3.3. Il trigger è automatico, non negoziabile seduta stante — evita l'ottimismo del "recupero la prossima settimana".  
-- Buffer: nessun buffer esplicito (incompatibile con 104 h); la scala di riduzione È il buffer.
+- Weekly progress check (integrated into the report, sec. 8) on GitHub Projects: hours spent, WP in progress, variance.
+- **De-scoping trigger:** if at mid-timebox the estimated completion of the critical WP is < 50%, the next step of the ladder 3.3 is applied. The trigger is automatic, not negotiable on the spot — it avoids the "I'll recover next week" optimism.
+- Buffer: no explicit buffer (incompatible with 104 h); the shedding ladder IS the buffer.
 
-## 5\. Gestione dei costi
+## 5. Cost management
 
-- **Budget ore:** 104 h, tracciate per WP su GitHub Projects (campo custom "ore").  
-- **Budget AI:** tetto mensile e soglia per task **TBD** (sez. 12). Fino alla definizione: tracking di tutti i costi API per run nel replay corpus (campo previsto da run.schema.json), nessuna soglia enforcement.  
-- **Controllo:** scostamento ore \> 20% su un WP → segnalato nel report settimanale con proposta di de-scoping o riallocazione.  
-- Il costo AI di costruzione del sistema (dogfooding, sez. 7.2) è contabilizzato separatamente dal costo AI di esercizio, per non inquinare la metrica costo-per-task.
+- **Effort budget:** 104 h, tracked per WP on GitHub Projects (custom field "hours").
+- **AI budget:** monthly cap and per-task threshold **TBD** (sec. 12). Until defined: tracking of all API costs per run in the replay corpus (field provided by run.schema.json), no threshold enforcement.
+- **Control:** effort variance > 20% on a WP → reported in the weekly report with a de-scoping or reallocation proposal.
+- The AI cost of building the system (dogfooding, sec. 7.2) is accounted separately from the AI cost of exercise, so as not to pollute the cost-per-task metric.
 
-## 6\. Gestione della qualità
+## 6. Quality management
 
-La qualità del *software prodotto* è governata dai documenti del kernel (Metrics, DoR/DoD, Evaluation) — questo piano non la duplica. La qualità dei *deliverable di progetto* segue queste regole:
+The quality of the *produced software* is governed by the kernel documents (Metrics, DoR/DoD, Evaluation) — this plan does not duplicate it. The quality of the *project deliverables* follows these rules:
 
-- Ogni documento del kernel ha un revisore: gli agenti AI eseguono review strutturata (coerenza interna, riferimenti incrociati, completezza rispetto al template), lo sponsor approva.  
-- Gli schemi JSON sono validati con esempi positivi e negativi committati accanto allo schema.  
-- Le PR al repository AISET seguono il template evidence-driven dal passaggio a evidence mode; prima, richiedono solo descrizione e collegamento a Issue.
+- Every kernel document has a reviewer: the AI agents perform structured review (internal coherence, cross-references, completeness against the template), the sponsor approves.
+- JSON schemas are validated with positive and negative examples committed alongside the schema.
+- PRs to the AISET repository follow the evidence-driven template from the transition to evidence mode; before that, they require only description and link to an Issue.
 
-## 7\. Gestione delle risorse
+## 7. Resource management
 
-### 7.1 Risorse umane
+### 7.1 Human resources
 
-Una persona (sponsor/PM/ingegnere), \< 5 h/settimana. Conseguenze operative: nessuna attività richiede sincronizzazione con terzi nel percorso critico; le sessioni di lavoro sono blocchi da 1-2 h con obiettivo singolo definito in anticipo su GitHub Projects.
+One person (sponsor/PM/engineer), < 5 h/week. Operational consequences: no activity requires synchronization with third parties on the critical path; work sessions are 1-2 h blocks with a single objective defined in advance on GitHub Projects.
 
-### 7.2 Dogfooding come moltiplicatore
+### 7.2 Dogfooding as a multiplier
 
-Gli agenti di coding (Claude Code, OpenCode) sono la risorsa che rende il piano tentabile: la scrittura di schemi, tooling di logging, eval runner e documentazione è delegata agli agenti con supervisione umana. **Ogni sessione di costruzione di AISET è essa stessa loggata secondo run.schema.json dal momento in cui esiste** — il progetto diventa il proprio primo caso di studio, e le 104 ore umane comprano molte più ore-agente.
+The coding agents (Claude Code, OpenCode) are the resource that makes the plan feasible: the writing of schemas, logging tooling, eval runner, and documentation is delegated to the agents with human supervision. **Every AISET construction session is itself logged according to run.schema.json from the moment it exists** — the project becomes its own first case study, and the 104 human hours buy many more agent-hours.
 
-### 7.3 Strumenti
+### 7.3 Tools
 
-GitHub (repo, Issues, Projects, PR), OpenCode, tooling SAST/static analysis open source, storage replay corpus.
+GitHub (repo, Issues, Projects, PR), OpenCode, open-source SAST/static analysis tooling, replay corpus storage.
 
-## 8\. Gestione delle comunicazioni
+## 8. Communication management
 
-| Comunicazione | Frequenza | Formato | Effort |
+| Communication | Frequency | Format | Effort |
 | :---- | :---- | :---- | :---- |
-| Report ad approvatori (Gaurav, Hemant) | Settimanale | **Generato automaticamente** da GitHub Projects (avanzamento WP, ore, metriche disponibili, rischi attivi) \+ 3-5 righe di commento del PM | ≤ 15 min/sett. |
-| Report di milestone | A M0/M1, M2, M3 | Documento strutturato con confronto vs baseline e decisioni richieste | Incluso in WP6 |
-| Registro decisioni | Continuo | ADR nel repository | — |
+| Report to approvers (Gaurav, Hemant) | Weekly | **Auto-generated** from GitHub Projects (WP progress, hours, available metrics, active risks) + 3-5 lines of PM commentary | ≤ 15 min/wk |
+| Milestone report | At M0/M1, M2, M3 | Structured document with comparison vs baseline and decisions requested | Included in WP6 |
+| Decision log | Continuous | ADR in the repository | — |
 
-Il report settimanale automatizzato è un deliverable di WP5 (prime 3 settimane in forma manuale ridotta). Vincolo: la comunicazione non deve superare il 10% del budget ore.
+The automated weekly report is a WP5 deliverable (first 3 weeks in reduced manual form). Constraint: communication must not exceed 10% of the effort budget.
 
-**TBD:** contenuto atteso dai destinatari — dipende dal ruolo reale di Gaurav e Hemant (sez. 12).
+**TBD:** expected content for the recipients — depends on the real role of Gaurav and Hemant (sec. 12).
 
-## 9\. Gestione dei rischi
+## 9. Risk management
 
-### 9.1 Registro (eredita dal charter, aggiornato con le decisioni di pianificazione)
+### 9.1 Register (inherits from the charter, updated with planning decisions)
 
-| ID | Rischio | P | I | Risposta | Owner |
+| ID | Risk | P | I | Response | Owner |
 | :---- | :---- | :---- | :---- | :---- | :---- |
-| R1 | **Effort disponibile (104 h) insufficiente per lo scope chartered (stima 250-400 h)** | **Certa** | Alto | **ACCETTATO dallo sponsor** (decisione registrata, sez. 1). Gestione: timeboxing, scala 3.3, dogfooding 7.2 | Sponsor |
-| R2 | Carico di revisione umana annulla i guadagni | Alta | Alto | Review package, escalation selettiva, budget attenzione | PM |
-| R3 | Infrastruttura di misura sacrificata sotto pressione | Media | Alto | Elementi non riducibili in 3.3; 30-40% ore protette | PM |
-| R4 | Review AI correlata a generazione AI | Alta | Alto | Layer deterministico, diversità modello, sentinel defects (post-M2) | PM |
-| R5 | Volume dati insufficiente a M3 per decisioni organizzative | Alta | Medio | Decisioni dichiarate provvisorie sotto soglia; replay corpus | PM |
-| R6 | Interruzioni prolungate della disponibilità (impegni CloudSalus/altri progetti) | Media | Alto | Timebox flessibili in avvio ±1 sett.; oltre 2 settimane di stop → change request su schedule baseline | Sponsor |
-| R7 | Drift modelli provider | Media | Medio | Pinning, flakiness budget | PM |
+| R1 | **Available effort (104 h) insufficient for the chartered scope (250-400 h estimate)** | **Certain** | High | **ACCEPTED by the sponsor** (recorded decision, sec. 1). Management: timeboxing, ladder 3.3, dogfooding 7.2 | Sponsor |
+| R2 | Human review load cancels out the gains | High | High | Review packages, selective escalation, attention budget | PM |
+| R3 | Measurement infrastructure sacrificed under pressure | Medium | High | Non-reducible elements in 3.3; 30-40% protected hours | PM |
+| R4 | AI review correlated with AI generation | High | High | Deterministic layer, model diversity, sentinel defects (post-M2) | PM |
+| R5 | Insufficient data volume at M3 for organizational decisions | High | Medium | Decisions declared provisional below threshold; replay corpus | PM |
+| R6 | Prolonged availability interruptions (CloudSalus/other project commitments) | Medium | High | Flexible timeboxes at start ±1 wk; beyond 2 weeks of stoppage → change request on schedule baseline | Sponsor |
+| R7 | Provider model drift | Medium | Medium | Pinning, flakiness budget | PM |
 
-### 9.2 Processo
+### 9.2 Process
 
-Revisione del registro a ogni report settimanale (campo "rischi attivi" generato da label GitHub); nuova valutazione completa a ogni milestone. Un rischio che si concretizza genera una Issue con etichetta `risk-materialized` e, se tocca le baseline, una change request.
+Register review at each weekly report ("active risks" field generated from GitHub labels); full re-evaluation at each milestone. A materialized risk generates an Issue with the `risk-materialized` label and, if it touches the baselines, a change request.
 
-## 10\. Gestione degli stakeholder
+## 10. Stakeholder management
 
-| Stakeholder | Strategia |
+| Stakeholder | Strategy |
 | :---- | :---- |
-| Gaurav, Hemant | Report settimanale automatizzato; coinvolgimento decisionale solo su change alle baseline e revisioni charter. **Strategia da raffinare quando il loro ruolo è definito (TBD)** |
-| Progetti ospiti | Selezione task compatibili con vincoli di riservatezza; nessun dato cliente nel corpus condivisibile |
-| Community | Nessuna comunicazione pubblica prima del report M2 (evita promesse premature) |
+| Gaurav, Hemant | Automated weekly report; decision involvement only on baseline changes and charter revisions. **Strategy to be refined once their role is defined (TBD)** |
+| Host projects | Selection of tasks compatible with confidentiality constraints; no client data in the shareable corpus |
+| Community | No public communication before the M2 report (avoids premature promises) |
 
-## 11\. Change control e configuration management
+## 11. Change control and configuration management
 
-- **Change request:** modifica a scope/schedule/cost baseline → Issue con etichetta `change-request`, analisi di impatto (3 righe minime: effetto su ore, milestone, rischi), decisione dello sponsor registrata. Modifiche che toccano il charter → sez. 11 del charter (ri-approvazione Gaurav/Hemant).  
-- **Configuration management:** tutto è nel repository Git; documenti versionati via PR; schemi con `schema_version`; release del "team AI" taggate con changelog e confronto metriche. Nessun documento vive fuori dal repo.  
-- I gradini della scala 3.3 **non richiedono change request** (sono pre-approvati con questo piano); la loro applicazione è solo registrata nel report settimanale.
+- **Change request:** modification to scope/schedule/cost baseline → Issue with the `change-request` label, impact analysis (minimum 3 lines: effect on hours, milestone, risks), recorded sponsor decision. Changes touching the charter → charter sec. 11 (re-approval by Gaurav/Hemant).
+- **Configuration management:** everything is in the Git repository; documents versioned via PR; schemas with `schema_version`; "AI team" releases tagged with changelog and metric comparison. No document lives outside the repo.
+- The steps of ladder 3.3 **do not require a change request** (they are pre-approved with this plan); their application is only recorded in the weekly report.
 
-## 12\. Punti aperti (bloccanti per la v1.0 finale)
+## 12. Open points (blocking for final v1.0)
 
-| \# | Punto | Impatta |
+| # | Point | Impacts |
 | :---- | :---- | :---- |
-| 1 | Ruolo reale di Gaurav e Hemant e loro aspettative | Sez. 8, 10; possibile revisione autorità in charter |
-| 2 | Tetto mensile budget AI (€) e soglia costo/task | Sez. 5; METRICS.md |
-| 3 | Progetti ospiti dei task reali | Sez. 7, 10; vincoli riservatezza; selezione task M1 |
-| 4 | Task set campione per baseline M1 (esiste o va costruito) | WP3; attendibilità di tutti i confronti successivi |
+| 1 | Real role of Gaurav and Hemant and their expectations | Sec. 8, 10; possible revision of authority in charter |
+| 2 | Monthly AI budget cap (€) and cost/task threshold | Sec. 5; METRICS.md |
+| 3 | Host projects for the real tasks | Sec. 7, 10; confidentiality constraints; M1 task selection |
+| 4 | Sample task set for the M1 baseline (exists or must be built) | WP3; reliability of all subsequent comparisons |
 
-Il piano è approvabile in bozza con questi TBD; la v1.0 finale li richiede risolti **entro la settimana 2** (il punto 4 blocca WP3, che è nel percorso critico).
+The plan is approvable in draft with these TBDs; the final v1.0 requires them resolved **within week 2** (point 4 blocks WP3, which is on the critical path).
 
 ---
 
-*Approvazione: Sponsor \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Gaurav \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Hemant \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Data **/**/\_\_\_\_\_\_*  
+*Approval: Sponsor \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Gaurav \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Hemant \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ · Date \_\_/\_\_/\_\_\_\_\_\_*

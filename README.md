@@ -29,4 +29,4 @@ Early stage — repository initialized, nothing implemented yet.
 
 ## License
 
-Not yet chosen.
+MIT — see [LICENSE](LICENSE).
