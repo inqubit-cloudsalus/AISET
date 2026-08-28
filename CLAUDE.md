@@ -125,7 +125,7 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 
 > Update this section at the end of every session.
 
-**Last updated:** 2026-08-27
+**Last updated:** 2026-08-28
 
 - **Active WP:** WP1 — Documentation kernel. State: **AWAITING PLAN APPROVAL**. The plan is in [WP1_PLAN.md](WP1_PLAN.md). BUILD has not started and must not start before a one-line human OK.
 - **Hours:** convention confirmed — the 24 h of WP1 (and the 104 h total) are **human** hours; agent hours and API cost are tracked separately as construction cost (plan §5). WP1 estimated at 22 h agent-side + ~3 h human against the 24 h budget. Spent so far: 0 h of build, ~1.5 h human (estimate) across the sessions of 2026-08-25 and 2026-08-26.
@@ -142,14 +142,18 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 - **Funding:** the project is paid by Massimiliano **and Gaurav** (Gaurav = Inqubit Systems and Technologies, co-funder). His charter confirmation is therefore a funding gate, not a formality — POC start is blocked until his OK.
 - **Standby (human decision, 2026-08-27):** wait for Gaurav's Project Charter confirmation before any further action — no BUILD, no POC start. State otherwise unchanged.
 
+**Decided this session (2026-08-28):**
+
+- **Charter v1.0 approved by Gaurav and Hemant** (both colleagues confirmed). The funding gate is open and POC start is unblocked. Recorded in [PROJECT_MANAGEMENT_PLAN.md](PROJECT_MANAGEMENT_PLAN.md) header + sec. 1; the plan itself remains draft (4 TBDs still open).
+- `PROJECT_MANAGEMENT_PLAN.md` updated with the decisions taken since its creation: human-hours cost convention, engine scope (open-source only), funding (Massimiliano + Gaurav), OpenCode Lifecycle Spike, and the charter-approval status.
+
 **Open — waiting on the human, raise these at the next session start:**
 
 1. **OK on the WP1 plan.** Blocks all BUILD.
 2. **OK on the Spike plan / milestone** (see above). Not blocking WP1.
-3. **Charter v1.0 confirmation from Gaurav** (Inqubit, co-funder). Hemant already confirmed. Blocks POC start and finalizing the management plan to v1.0.
-4. **TBD #1** (plan §12) — concrete role and cadence of Gaurav/Hemant. Partially resolved: Gaurav = co-funder; still need reporting cadence and decision authority for both.
-5. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Now tied to the funding agreement between Massimiliano and Gaurav. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
-6. **TBD #4** (plan §12) — baseline sample task set: does it already exist or must it be built? Blocks WP3, which is on the critical path; due by week 2.
+3. **TBD #1** (plan §12) — concrete role and cadence of Gaurav/Hemant. Partially resolved: Gaurav = co-funder; still need reporting cadence and decision authority for both.
+4. **TBD #2** (plan §12) — monthly AI cap and cost-per-task threshold. Now tied to the funding agreement between Massimiliano and Gaurav. Not blocking: METRICS.md defines Cost per Task formally with the threshold marked TBD.
+5. **TBD #4** (plan §12) — baseline sample task set: does it already exist or must it be built? Blocks WP3, which is on the critical path; due by week 2.
 
 **Proposed this session, not yet approved and not yet ADRs:**
 

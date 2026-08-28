@@ -5,16 +5,19 @@
 | Field | Value |
 | :---- | :---- |
 | **Version** | 1.0 (draft — 4 TBD points in sec. 12) |
-| **Date** | August 25, 2026 |
-| **Reference** | PROJECT_CHARTER v1.0 |
+| **Date** | August 28, 2026 |
+| **Reference** | PROJECT_CHARTER v1.0 (approved 2026-08-28) |
 | **Project Manager** | Massimiliano Corvino |
 | **Approval required** | Sponsor + Gaurav, Hemant |
+| **Funding** | Massimiliano Corvino (Sponsor) + Gaurav / Inqubit Systems and Technologies (co-funder) |
 
 ---
 
 ## 1. Introduction
 
 This plan defines how the AISET project will be executed, monitored, controlled, and closed, in implementation of Project Charter v1.0. In case of conflict between this plan and the charter, the charter prevails; charter changes follow its section 11.
+
+**Charter status:** PROJECT_CHARTER v1.0 was approved on 2026-08-28 by the Sponsor and both approvers (Gaurav, Hemant).
 
 **Founding decision of the plan (recorded):** the sponsor chose to keep the 6-month horizon with availability < 5 h/week (~104 total estimated hours), **formally accepting the schedule risk** against a full-plan effort estimate of 250-400 hours. The plan manages this choice with three instruments: rigid timeboxing, a pre-defined scope-shedding ladder (sec. 3.3), and the use of AI agents to build the system itself (sec. 7.2).
 
@@ -24,7 +27,7 @@ This plan defines how the AISET project will be executed, monitored, controlled,
 
 - **Scope baseline:** deliverables D1-D7 of the charter, with priority and reducibility defined in sec. 3.
 - **Schedule baseline:** 26 weeks, milestones as per sec. 4.
-- **Cost baseline:** effort budget 104 h (~4 h/wk × 26); AI budget: TBD (sec. 12).
+- **Cost baseline:** effort budget 104 **human** hours (~4 h/wk × 26); AI budget: TBD (sec. 12, tied to the funding agreement). Agent hours and API cost are tracked separately as construction cost.
 - The baselines are changeable only through change control (sec. 11).
 
 ## 3. Scope management
@@ -78,8 +81,8 @@ If at the end of a timebox the minimum exit criteria are not achievable, scope r
 
 ## 5. Cost management
 
-- **Effort budget:** 104 h, tracked per WP on GitHub Projects (custom field "hours").
-- **AI budget:** monthly cap and per-task threshold **TBD** (sec. 12). Until defined: tracking of all API costs per run in the replay corpus (field provided by run.schema.json), no threshold enforcement.
+- **Effort budget:** 104 **human** hours, tracked per WP on GitHub Projects (custom field "hours"). Agent hours and API cost are construction cost, tracked separately and not counted against the 104 h.
+- **AI budget:** monthly cap and per-task threshold **TBD** (sec. 12), tied to the funding agreement between the Sponsor and Gaurav. Until defined: tracking of all API costs per run in the replay corpus (field provided by run.schema.json), no threshold enforcement.
 - **Control:** effort variance > 20% on a WP → reported in the weekly report with a de-scoping or reallocation proposal.
 - The AI cost of building the system (dogfooding, sec. 7.2) is accounted separately from the AI cost of exercise, so as not to pollute the cost-per-task metric.
 
@@ -99,11 +102,13 @@ One person (sponsor/PM/engineer), < 5 h/week. Operational consequences: no activ
 
 ### 7.2 Dogfooding as a multiplier
 
-The coding agents (Claude Code, OpenCode) are the resource that makes the plan feasible: the writing of schemas, logging tooling, eval runner, and documentation is delegated to the agents with human supervision. **Every AISET construction session is itself logged according to run.schema.json from the moment it exists** — the project becomes its own first case study, and the 104 human hours buy many more agent-hours.
+The coding agents (open-source engines, e.g. OpenCode) are the resource that makes the plan feasible: the writing of schemas, logging tooling, eval runner, and documentation is delegated to the agents with human supervision. **Every AISET construction session is itself logged according to run.schema.json from the moment it exists** — the project becomes its own first case study, and the 104 human hours buy many more agent-hours.
+
+**Engine validation spike:** the earlier "AISET Thin POC" was reduced and approved as the **OpenCode Lifecycle Spike** (GitHub milestone "OpenCode Lifecycle POC"; plan in [SPIKE_OPENCODE_LIFECYCLE_PLAN.md](SPIKE_OPENCODE_LIFECYCLE_PLAN.md), awaiting its own OK). It validates the open-source engine choice before WP4: Bun server + SQLite + OpenCodeAdapter; launch multi-agent OpenCode → kill → verify what survives, incl. Bun restart; outcome recorded as an ADR.
 
 ### 7.3 Tools
 
-GitHub (repo, Issues, Projects, PR), OpenCode, open-source SAST/static analysis tooling, replay corpus storage.
+GitHub (repo, Issues, Projects, PR), OpenCode (target engine), open-source SAST/static analysis tooling, replay corpus storage. **Engine scope (decided):** open-source engine only — Claude Code/Cursor portability is out of scope (charter §4.2).
 
 ## 8. Communication management
 
@@ -139,7 +144,7 @@ Register review at each weekly report ("active risks" field generated from GitHu
 
 | Stakeholder | Strategy |
 | :---- | :---- |
-| Gaurav, Hemant | Automated weekly report; decision involvement only on baseline changes and charter revisions. **Strategy to be refined once their role is defined (TBD)** |
+| Gaurav, Hemant | Gaurav = co-funder (Inqubit Systems and Technologies); Hemant = approver. Automated weekly report; decision involvement on baseline changes and charter revisions. **Reporting cadence and decision authority still TBD (sec. 12)** |
 | Host projects | Selection of tasks compatible with confidentiality constraints; no client data in the shareable corpus |
 | Community | No public communication before the M2 report (avoids premature promises) |
 
@@ -153,8 +158,8 @@ Register review at each weekly report ("active risks" field generated from GitHu
 
 | # | Point | Impacts |
 | :---- | :---- | :---- |
-| 1 | Real role of Gaurav and Hemant and their expectations | Sec. 8, 10; possible revision of authority in charter |
-| 2 | Monthly AI budget cap (€) and cost/task threshold | Sec. 5; METRICS.md |
+| 1 | Real role of Gaurav and Hemant and their expectations | Sec. 8, 10; possible revision of authority in charter. Partially resolved: Gaurav = co-funder (Inqubit); reporting cadence and decision authority still open |
+| 2 | Monthly AI budget cap (€) and cost/task threshold | Sec. 5; METRICS.md. Tied to the funding agreement between the Sponsor and Gaurav |
 | 3 | Host projects for the real tasks | Sec. 7, 10; confidentiality constraints; M1 task selection |
 | 4 | Sample task set for the M1 baseline (exists or must be built) | WP3; reliability of all subsequent comparisons |
 
