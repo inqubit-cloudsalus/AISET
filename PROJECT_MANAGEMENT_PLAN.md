@@ -27,7 +27,7 @@ This plan defines how the AISET project will be executed, monitored, controlled,
 
 - **Scope baseline:** deliverables D1-D7 of the charter, with priority and reducibility defined in sec. 3.
 - **Schedule baseline:** 26 weeks, milestones as per sec. 4.
-- **Cost baseline:** effort budget 104 **human** hours (~4 h/wk × 26); AI budget: TBD (sec. 12, tied to the funding agreement). Agent hours and API cost are tracked separately as construction cost.
+- **Cost baseline:** effort budget 104 **human** hours (~4 h/wk × 26); planned effort 92 h after the WP1 re-estimate (24 → 12 h). AI budget: TBD (sec. 12, tied to the funding agreement). Agent hours and API cost are tracked separately as construction cost.
 - The baselines are changeable only through change control (sec. 11).
 
 ## 3. Scope management
@@ -36,15 +36,15 @@ This plan defines how the AISET project will be executed, monitored, controlled,
 
 | WP | Content | Deliverable | Estimated hours |
 | :---- | :---- | :---- | :---- |
-| WP1 — Documentation kernel | Metrics, Agent Contract, Artifacts, Workflow; stubs of the other documents | D1 (partial), D2 (partial) | 24 |
+| WP1 — Documentation kernel | Metrics, Agent Contract, Artifacts, Workflow; stubs of the other documents | D1 (partial), D2 (partial) | 12 |
 | WP2 — Schemas and templates | run.schema.json + specification.schema.json complete; others in minimum version; evidence-driven PR and failure-issue templates | D2 | 10 |
 | WP3 — Human baseline | Sample task selection, measurement, report | D6 | 8 |
 | WP4 — Agents V0.1 | Platform-agnostic specifications + OpenCode implementation | D3, D4 | 26 |
 | WP5 — Measurement infrastructure | Run logging, replay corpus, minimal eval suite, eval baseline | D5 | 22 |
 | WP6 — Exercise & milestones | Use on real tasks, M2 and M3 reports, organizational decisions | D7 | 14 |
-| **Total** |  |  | **104** |
+| **Total** |  |  | **92** |
 
-The charter constraint (30-40% on measurement) is respected: WP5 + the measurement share of WP3/WP6 ≈ 34 hours.
+The charter constraint (30-40% on measurement) is respected: WP5 + the measurement share of WP3/WP6 ≈ 34 hours. WP1 was re-estimated 24 → 12 h (2026-08-28, human decision — times judged overestimated); the freed 12 h stay unallocated against the 104 h capacity.
 
 ### 3.2 Definition of Done of the work packages
 

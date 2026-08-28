@@ -5,8 +5,8 @@
 | **Status** | **PROPOSED — awaiting human approval. BUILD must not start before a one-line OK.** |
 | **Version** | v1 |
 | **Date** | 2026-08-26 |
-| **Budget (plan §3.1)** | 24 h |
-| **Estimate** | 22 h agent-side, ~3 h human |
+| **Budget (plan §3.1)** | 12 h |
+| **Estimate** | 11 h agent-side, ~1.5 h human |
 | **Note** | Temporary location. Moves to its final home when the CLAUDE.md §2 scaffold is created during BUILD. |
 
 ## Scope
@@ -46,19 +46,19 @@ One command, zero manual setup: `make validate-wp1`.
 
 | Item | h |
 |---|---|
-| METRICS 3.5 · AGENT_CONTRACT 3 · ARTIFACTS 3 · WORKFLOW 4 | 13.5 |
-| 7 stubs | 1.5 |
-| `check_coherence.py` + make target | 2.5 |
-| T-001 walkthrough | 2 |
-| Self-check + coherence fixes | 2 |
-| Validation brief | 0.5 |
-| **Total agent-side** | **22 / 24** |
-| **Human hours** (plan OK 0.5 · 2 checkpoints 1 · demo 0.5 · one revision round 1) | **~3** |
+| METRICS 1.75 · AGENT_CONTRACT 1.5 · ARTIFACTS 1.5 · WORKFLOW 2 | 6.75 |
+| 7 stubs | 0.75 |
+| `check_coherence.py` + make target | 1.25 |
+| T-001 walkthrough | 1 |
+| Self-check + coherence fixes | 1 |
+| Validation brief | 0.25 |
+| **Total agent-side** | **11 / 12** |
+| **Human hours** (plan OK 0.25 · 2 checkpoints 0.5 · demo 0.25 · one revision round 0.5) | **~1.5** |
 
 ## Documented assumptions
 
 - The constraint "no OpenCode reference outside `.opencode/`" is applied **to the kernel documents produced here**. The charter, the plan and the README cite OpenCode legitimately; including them would make the checker fail by construction on its first run.
-- `tools/check_coherence.py` is not in the WP1 line of plan §3.1. It is added because CLAUDE.md §3 requires a single command with no manual setup. Declared cost: 2.5 h. Without it, Part A becomes manual and the demo exceeds 30 minutes.
+- `tools/check_coherence.py` is not in the WP1 line of plan §3.1. It is added because CLAUDE.md §3 requires a single command with no manual setup. Declared cost: 1.25 h. Without it, Part A becomes manual and the demo exceeds 30 minutes.
 - **Cost per Task** is defined formally (formula, unit, source) with the threshold left as an explicit TBD, due by week 2 per plan §12.
-- Hour convention proposed: the 24 h are the **human** currency of the WP; agent hours and API cost are tracked separately as construction cost (plan §5). Confirmation needed — it changes reporting for every WP.
+- Hour convention: the 12 h are the **human** currency of the WP; agent hours and API cost are tracked separately as construction cost (plan §5). Confirmed 2026-08-28.
 - The FAILURE_TAXONOMY stub will designate Kepner-Tregoe (from the `agentic-skills-playbook` repo) as the failure-analysis method, by link. One line, inside the 15; no change to the estimate.

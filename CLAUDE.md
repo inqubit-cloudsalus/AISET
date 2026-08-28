@@ -128,7 +128,7 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 **Last updated:** 2026-08-28
 
 - **Active WP:** WP1 — Documentation kernel. State: **AWAITING PLAN APPROVAL**. The plan is in [WP1_PLAN.md](WP1_PLAN.md). BUILD has not started and must not start before a one-line human OK.
-- **Hours:** convention confirmed — the 24 h of WP1 (and the 104 h total) are **human** hours; agent hours and API cost are tracked separately as construction cost (plan §5). WP1 estimated at 22 h agent-side + ~3 h human against the 24 h budget. Spent so far: 0 h of build, ~1.5 h human (estimate) across the sessions of 2026-08-25 and 2026-08-26.
+- **Hours:** convention confirmed — the 12 h of WP1 (and the 104 h total capacity) are **human** hours; agent hours and API cost are tracked separately as construction cost (plan §5). WP1 estimated at 11 h agent-side + ~1.5 h human against the 12 h budget. Spent so far: 0 h of build, ~1.5 h human (estimate) across the sessions of 2026-08-25 and 2026-08-26.
 - **Repository:** published at `inqubit-cloudsalus/AISET` (public) with the initial commit of 2026-08-27: `CLAUDE.md`, `PROJECT_CHARTER.md`, `PROJECT_MANAGEMENT_PLAN.md`, `README.md`, `.gitignore`, `WP1_PLAN.md`. License: **MIT** (`LICENSE`). `PROJECT_MANAGEMENT_PLAN.md` is now in English. The §2 scaffold does not exist yet — it is created during WP1 BUILD.
 
 **Decided this session (2026-08-27):**
@@ -146,6 +146,7 @@ Additionally, for this meta-project: never edit `PROJECT_CHARTER.md` (any versio
 
 - **Charter v1.0 approved by Gaurav and Hemant** (both colleagues confirmed). The funding gate is open and POC start is unblocked. Recorded in [PROJECT_MANAGEMENT_PLAN.md](PROJECT_MANAGEMENT_PLAN.md) header + sec. 1; the plan itself remains draft (4 TBDs still open).
 - `PROJECT_MANAGEMENT_PLAN.md` updated with the decisions taken since its creation: human-hours cost convention, engine scope (open-source only), funding (Massimiliano + Gaurav), OpenCode Lifecycle Spike, and the charter-approval status.
+- **WP1 budget halved (human decision):** 24 h → 12 h (times judged overestimated). [WP1_PLAN.md](WP1_PLAN.md) and plan §3.1 updated; total planned effort 104 h → 92 h, the freed 12 h stay unallocated.
 
 **Open — waiting on the human, raise these at the next session start:**
 
