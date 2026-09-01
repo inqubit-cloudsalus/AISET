@@ -4,7 +4,7 @@ import type { Context } from "../../src/cli/context.ts";
 import { displayRunId } from "../../src/core/ids.ts";
 import { resolvePaths } from "../../src/core/paths.ts";
 import { COMMANDS, dispatch, findCommand } from "../../src/shell/commands.ts";
-import type { Session } from "../../src/shell/types.ts";
+import type { Session, ShellBlock } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
 import { freshDb } from "../db/helpers.ts";
 
@@ -179,6 +179,36 @@ describe("/launch", () => {
     expect(result.kind).toBe("error");
     expect(result.text).toContain("--timeout must be");
     expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+});
+
+describe("progress channel", () => {
+  test("dispatch works without an emit callback", async () => {
+    const session = makeSession();
+    const result = await dispatch(session, "/help");
+    expect(result.blocks[0]!.kind).toBe("output");
+    session.db.close();
+  });
+
+  test("a command that emits nothing leaves the channel unused", async () => {
+    const session = makeSession();
+    const emitted: ShellBlock[] = [];
+    await dispatch(session, "/runs", (b) => emitted.push(b));
+    expect(emitted).toEqual([]);
+    session.db.close();
+  });
+
+  test("/launch reports it is starting before it reaches OpenCode", async () => {
+    const session = makeSession();
+    const emitted: ShellBlock[] = [];
+    // A bogus binary fails at spawn, after the feedback line is already out.
+    const result = await dispatch(session, "/launch --bin aiset-no-such-binary write a file", (b) =>
+      emitted.push(b),
+    );
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(emitted[0]!.text).toContain("starting OpenCode");
+    expect(result.blocks[0]!.kind).toBe("error");
     session.db.close();
   });
 });

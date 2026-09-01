@@ -26,6 +26,12 @@ export function eventDetail(event: EventRow): string {
   return `${agent}${message}`;
 }
 
+/** One event as it appears in a timeline. Shared by run detail, tail and /launch. */
+export function plainEventLine(event: EventRow): string {
+  const seq = String(event.seq).padStart(4);
+  return `  ${seq} ${formatTimestamp(event.ts)} ${event.type.padEnd(9)}${eventDetail(event)}`;
+}
+
 function mark(theme: Theme, tone: StatusTone): string {
   return tone === "ok"
     ? theme.symbols.ok
@@ -110,12 +116,7 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
 
   lines.push("", `events (${model.eventCount})`);
   if (model.showEvents && model.events.length > 0) {
-    for (const e of model.events) {
-      const msg = eventDetail(e);
-      lines.push(
-        `  ${String(e.seq).padStart(4)} ${formatTimestamp(e.ts)} ${e.type.padEnd(9)}${msg}`,
-      );
-    }
+    for (const e of model.events) lines.push(plainEventLine(e));
   } else if (model.eventCount > 0) {
     lines.push("  (use --events to list them)");
   } else {
@@ -183,10 +184,7 @@ export function plainInit(model: InitModel, theme: Theme): string {
 
 export function plainTail(model: TailModel, theme: Theme): string {
   const lines = [`${theme.symbols.accent} tail ${model.run.displayId} (${model.run.status})`];
-  for (const e of model.events) {
-    const msg = eventDetail(e);
-    lines.push(`  ${String(e.seq).padStart(4)} ${formatTimestamp(e.ts)} ${e.type.padEnd(9)}${msg}`);
-  }
+  for (const e of model.events) lines.push(plainEventLine(e));
   if (model.finished) lines.push(`  ${theme.symbols.ok} run ${model.run.status}`);
   return lines.join("\n");
 }

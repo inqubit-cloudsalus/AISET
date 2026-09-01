@@ -5,22 +5,28 @@ import { displayRunId, normalizeRunId } from "../core/ids.ts";
 import { isCurrent, migrationStatus } from "../db/migrate.ts";
 import { listArtifacts } from "../db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../db/repositories/events.ts";
-import { countByStatus, countRuns, findRun, listRuns } from "../db/repositories/runs.ts";
+import {
+  countByStatus,
+  countRuns,
+  findRun,
+  listRuns,
+  runDurationMs,
+} from "../db/repositories/runs.ts";
 import { tableCounts } from "../db/repositories/stats.ts";
 import { usageTotals } from "../db/repositories/usage.ts";
 import { RUN_STATUSES, type RunStatus } from "../db/types.ts";
-import { start } from "../opencode/adapter.ts";
+import { observe, start } from "../opencode/adapter.ts";
 import { toArtifactRow, toEventRow, toRunRow } from "../ui/mappers.ts";
 import type { DbStatusModel, RunDetailModel, RunListModel } from "../ui/models.ts";
 import {
   plainDbStatus,
   plainDoctor,
+  plainEventLine,
   plainRunDetail,
   plainRunList,
-  plainTail,
 } from "../ui/plain.ts";
-import { toneForVerdict } from "../ui/theme.ts";
-import type { Session, ShellResult, SlashCommand } from "./types.ts";
+import { formatDuration, toneForVerdict } from "../ui/theme.ts";
+import type { Session, ShellEmit, ShellResult, SlashCommand } from "./types.ts";
 
 function output(text: string): ShellResult {
   return { blocks: [{ kind: "output", text }], effect: "none" };
@@ -178,8 +184,8 @@ const seed: SlashCommand = {
 const launch: SlashCommand = {
   name: "launch",
   summary: "launch a multi-agent OpenCode run in this directory",
-  usage: "/launch <prompt>",
-  async run(session, args) {
+  usage: "/launch [--agent <a>] [--model <m>] <prompt>",
+  async run(session, args, emit) {
     const { flags, positional } = parseFlags(args);
     const prompt = positional.join(" ").trim();
     if (!prompt) return failure("usage: /launch <prompt>");
@@ -192,6 +198,14 @@ const launch: SlashCommand = {
 
     const config = await readConfig();
     const oc = config?.opencode;
+    const { symbols } = session.theme;
+
+    // Starting the engine takes a few seconds before the first event exists,
+    // so say so rather than leaving the shell silent.
+    emit({
+      kind: "output",
+      text: `${symbols.accent} starting OpenCode in ${session.ctx.paths.root}…`,
+    });
 
     let handle: Awaited<ReturnType<typeof start>>;
     try {
@@ -205,7 +219,7 @@ const launch: SlashCommand = {
           workdir: flags.get("workdir"),
         },
         {
-          bin: oc?.bin,
+          bin: flags.get("bin") ?? oc?.bin,
           hostname: oc?.hostname,
           port: oc?.port,
           timeoutMs: timeoutMs ?? oc?.timeoutMs ?? 600_000,
@@ -215,23 +229,31 @@ const launch: SlashCommand = {
       return failure(`launch: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // A shell command renders one committed block, so the timeline is shown
-    // when the run closes rather than streamed. It is already in the database
-    // while it runs: `/run <id>` from another shell shows it live.
+    emit({
+      kind: "output",
+      text: `${symbols.ok} ${displayRunId(handle.runId)} running${
+        (flags.get("agent") ?? oc?.agent) ? ` · agent ${flags.get("agent") ?? oc?.agent}` : ""
+      } · ctrl+c will not stop it, use /run ${displayRunId(handle.runId)} to inspect`,
+    });
+
+    // Every line below is a row already committed to SQLite by the adapter's
+    // pump — the shell is following the database, not narrating a guess.
+    for await (const event of observe(session.db, handle.runId, { pollMs: 150 })) {
+      emit({ kind: "output", text: plainEventLine(toEventRow(event)) });
+    }
+
     await handle.finished.catch(() => {});
     const run = findRun(session.db, handle.runId);
     if (!run) return failure(`launch: run ${handle.runId} vanished mid-flight`);
 
-    return output(
-      plainTail(
-        {
-          run: toRunRow(run),
-          events: listEvents(session.db, handle.runId).map(toEventRow),
-          finished: true,
-        },
-        session.theme,
-      ),
-    );
+    const totals = usageTotals(session.db, handle.runId);
+    const artifacts = listArtifacts(session.db, handle.runId);
+    const mark = run.status === "succeeded" ? symbols.ok : symbols.fail;
+    const summary = [
+      `${mark} ${displayRunId(run.id)} ${run.status} in ${formatDuration(runDurationMs(run))}`,
+      `  ${artifacts.length} artifact(s) ${symbols.bullet} ${totals.inputTokens} in / ${totals.outputTokens} out tokens ${symbols.bullet} $${totals.costUsd.toFixed(4)}`,
+    ].join("\n");
+    return run.status === "succeeded" ? output(summary) : failure(summary);
   },
 };
 
@@ -281,13 +303,17 @@ export function completions(prefix: string): string[] {
  * Dispatches one submitted line. Bare text is an error, not a prompt: the shell
  * does not yet run agents, and it will not pretend to.
  */
-export async function dispatch(session: Session, line: string): Promise<ShellResult> {
+export async function dispatch(
+  session: Session,
+  line: string,
+  emit: ShellEmit = () => {},
+): Promise<ShellResult> {
   const trimmed = line.trim();
   if (trimmed === "") return { blocks: [], effect: "none" };
 
   if (!trimmed.startsWith("/")) {
     return failure(
-      `not a command: ${trimmed}\nthe shell does not run agents yet — type /help to see what it does do`,
+      `not a command: ${trimmed}\nto run an agent use /launch <prompt> — type /help for the full list`,
     );
   }
 
@@ -300,7 +326,7 @@ export async function dispatch(session: Session, line: string): Promise<ShellRes
   }
 
   try {
-    return await command.run(session, args);
+    return await command.run(session, args, emit);
   } catch (err) {
     return failure(`/${command.name} failed: ${(err as Error).message}`);
   }

@@ -18,6 +18,7 @@ export interface RunOptions {
   timeout?: string;
   task?: string;
   detach?: boolean;
+  bin?: string;
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "timeout", "killed"]);
@@ -59,7 +60,7 @@ export async function runRun(ctx: Context, prompt: string, opts: RunOptions): Pr
         workdir: opts.workdir,
       },
       {
-        bin: oc?.bin,
+        bin: opts.bin ?? oc?.bin,
         hostname: oc?.hostname,
         port: oc?.port,
         timeoutMs: parseTimeout(opts.timeout, oc?.timeoutMs ?? 600_000),

@@ -81,7 +81,8 @@ withGlobals(
     .option("--workdir <path>", "directory OpenCode runs in (default: cwd)")
     .option("--timeout <ms>", "give up and record a timeout after this long")
     .option("--task <id>", "external task reference, e.g. T-001")
-    .option("--detach", "print the run id and do not follow the events"),
+    .option("--detach", "print the run id and do not follow the events")
+    .option("--bin <path>", "OpenCode executable to use (default: opencode on PATH)"),
 ).action((prompt: string[], opts, cmd: Command) =>
   run(() => runRun(ctx(cmd), prompt.join(" "), opts)),
 );

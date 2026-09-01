@@ -28,6 +28,15 @@ export interface ShellResult {
   effect: ShellEffect;
 }
 
+/**
+ * Appends a block to the transcript before the command has returned.
+ *
+ * A long command (`/launch`) would otherwise show nothing at all until it
+ * finished. What it emits is still only what the database already holds — this
+ * is a delivery channel, not a licence to invent progress.
+ */
+export type ShellEmit = (block: ShellBlock) => void;
+
 export interface SlashCommand {
   name: string;
   summary: string;
@@ -35,6 +44,9 @@ export interface SlashCommand {
   /**
    * Returns already-rendered plain text. Commands never touch React, which is
    * what makes every one of them unit-testable without mounting Ink.
+   *
+   * `emit` publishes a block immediately; commands that finish promptly ignore
+   * it and just return their blocks.
    */
-  run(session: Session, args: string[]): ShellResult | Promise<ShellResult>;
+  run(session: Session, args: string[], emit: ShellEmit): ShellResult | Promise<ShellResult>;
 }

@@ -4,6 +4,7 @@ import { dispatch } from "../../shell/commands.ts";
 import { shellHeader } from "../../shell/session.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
 import { headerRows, rowText, type Shade } from "../banner.ts";
+import { useSpinnerFrame } from "../components/index.tsx";
 import { Prompt } from "../components/Prompt.tsx";
 import { MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_LINES, type WheelDirection } from "../mouse.ts";
 import { colorForTone, type Theme } from "../theme.ts";
@@ -64,6 +65,8 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
 
+  const spinner = useSpinnerFrame(theme);
+
   // Read once: the header describes the handle this session opened, and the
   // counts on it are a connection fact, not a live view of the data.
   const header = useMemo(() => shellHeader(session), [session]);
@@ -77,7 +80,7 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
   const status = scrollStatus(lines.length, offset, height);
 
   const parts = [
-    busy ? `${theme.symbols.accent} working` : null,
+    busy ? `${spinner} working` : null,
     status.total === 0 ? "empty" : `lines ${status.first}–${status.last} of ${status.total}`,
     status.following ? null : `${theme.symbols.warn} scrolled back`,
     // The key hints are the first thing to go when the terminal is narrow.
@@ -102,7 +105,9 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
       // Chained rather than fired in parallel, so a line submitted while another
       // command is still running cannot interleave its output.
       queue.current = queue.current
-        .then(() => dispatch(session, line))
+        // A long command publishes blocks as it goes, so the transcript grows
+        // while it runs instead of staying empty until it returns.
+        .then(() => dispatch(session, line, (block) => append([block])))
         .then((result) => {
           // Clears the transcript only; the header above the viewport stays.
           if (result.effect === "clear") {

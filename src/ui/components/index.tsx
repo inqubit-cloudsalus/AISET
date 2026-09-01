@@ -126,16 +126,26 @@ export function Table({
   );
 }
 
-export function Spinner({ theme, label }: ThemeProp & { label: string }) {
+/**
+ * The current spinner glyph on its own, for callers that compose their own
+ * line — the shell's status row is a single truncated `Text` and cannot afford
+ * the nested elements `Spinner` renders.
+ */
+export function useSpinnerFrame(theme: Theme): string {
   const [frame, setFrame] = useState(0);
   const frames = theme.symbols.spinner;
   useEffect(() => {
     const timer = setInterval(() => setFrame((f) => (f + 1) % frames.length), 90);
     return () => clearInterval(timer);
   }, [frames.length]);
+  return frames[frame] ?? "";
+}
+
+export function Spinner({ theme, label }: ThemeProp & { label: string }) {
+  const frame = useSpinnerFrame(theme);
   return (
     <Text>
-      <Text color={tint(theme, theme.colors.accent)}>{frames[frame]} </Text>
+      <Text color={tint(theme, theme.colors.accent)}>{frame} </Text>
       <Text color={tint(theme, theme.colors.muted)}>{label}</Text>
     </Text>
   );
