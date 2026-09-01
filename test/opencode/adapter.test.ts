@@ -20,7 +20,12 @@ class FakeApi implements OpenCodeApi {
     private readonly script: OpenCodeEvent[],
     /** Held open after the script runs out, so kill and timeout have something to interrupt. */
     private readonly hang = false,
+    /** Answers an abort with a root session error, the way OpenCode itself does. */
+    private readonly errorOnAbort = false,
   ) {}
+
+  /** Events the engine emits in reaction to something we asked of it. */
+  private readonly pending: OpenCodeEvent[] = [];
 
   createSession(_input: CreateSessionInput): Promise<string> {
     return Promise.resolve(ROOT_SESSION);
@@ -33,7 +38,17 @@ class FakeApi implements OpenCodeApi {
 
   abort(sessionId: string): Promise<void> {
     this.aborted.push(sessionId);
-    return Promise.resolve();
+    // The real engine answers an abort with a root session error, which the
+    // mapper reads as a terminal failure. Replaying that is what keeps the
+    // adapter honest about the difference between failed and cancelled.
+    if (!this.errorOnAbort) return Promise.resolve();
+    this.pending.push({
+      type: "session.error",
+      properties: { sessionID: ROOT_SESSION, error: { name: "Aborted" } },
+    } as OpenCodeEvent);
+    // The error arrives over the still-open stream while the abort request is
+    // in flight, so the pump sees it before the signal is ever raised.
+    return Bun.sleep(20);
   }
 
   async *events(signal: AbortSignal): AsyncIterable<OpenCodeEvent> {
@@ -41,7 +56,14 @@ class FakeApi implements OpenCodeApi {
       if (signal.aborted) return;
       yield ev;
     }
-    while (this.hang && !signal.aborted) await Bun.sleep(5);
+    while (this.hang && !signal.aborted) {
+      const queued = this.pending.shift();
+      if (queued) {
+        yield queued;
+        continue;
+      }
+      await Bun.sleep(5);
+    }
   }
 }
 
@@ -215,8 +237,9 @@ describe("adapter lifecycle: kill and timeout", () => {
    */
   test("a cancel requested elsewhere is picked up by the owning pump", async () => {
     const db = freshDb();
-    // An empty script that hangs: the run stays open until something stops it.
-    const api = new FakeApi([], true);
+    // An empty script that hangs, and answers the abort with a session error
+    // the way the real engine does: the run stays open until something stops it.
+    const api = new FakeApi([], true, true);
     const handle = await start(
       db,
       { prompt: "hang until cancelled" },
@@ -225,7 +248,9 @@ describe("adapter lifecycle: kill and timeout", () => {
     requestCancel(db, handle.runId);
     const run = await handle.finished;
 
+    // The engine calls its own abort an error; a stop we asked for is a kill.
     expect(run.status).toBe("killed");
+    expect(run.exit_code).toBe(130);
     expect(api.aborted).toEqual([ROOT_SESSION]);
     const all = await collect(db, handle.runId);
     expect(all.filter((e) => e.type === "end").length).toBe(1);

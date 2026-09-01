@@ -197,7 +197,10 @@ async function pump(
       const mapped = mapper.map(ev);
       writeMapped(db, runId, workdir, mapped);
       if (mapped.terminal) {
-        terminal = mapped.terminal;
+        // OpenCode reports our own abort as a session error. A run we stopped
+        // on purpose is cancelled, not failed, whatever the engine says on the
+        // way out.
+        terminal = handle.killed ? "killed" : mapped.terminal;
         break;
       }
     }
@@ -218,7 +221,13 @@ async function pump(
 
   // An aborted stream with no verdict of its own is a kill, not a success.
   const status: RunStatus = terminal ?? (handle.killed ? "killed" : "failed");
-  return finalize(db, runId, status, status === "succeeded" ? 0 : 1);
+  return finalize(db, runId, status, exitCodeFor(status));
+}
+
+/** 130 is the conventional "terminated by a signal" code, as `cancel` uses. */
+function exitCodeFor(status: RunStatus): number {
+  if (status === "succeeded") return 0;
+  return status === "killed" ? 130 : 1;
 }
 
 function writeMapped(db: Db, runId: string, workdir: string, mapped: Mapped): void {
