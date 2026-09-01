@@ -9,6 +9,7 @@
     "aiset": "./src/cli/main.ts"
   },
   "scripts": {
+    "dev": "bun run src/cli/main.ts shell",
     "aiset": "bun run src/cli/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",

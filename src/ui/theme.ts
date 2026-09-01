@@ -88,6 +88,8 @@ export interface Theme {
   colors: typeof colors;
   /** False when NO_COLOR is set or output is not a TTY — Ink still needs to know. */
   useColor: boolean;
+  /** False on a terminal that cannot render block-drawing glyphs. */
+  unicode: boolean;
 }
 
 /**
@@ -98,7 +100,7 @@ export function makeTheme(opts: { color?: boolean; unicode?: boolean } = {}): Th
   const noColorEnv = (process.env.NO_COLOR ?? "") !== "";
   const useColor = opts.color ?? !noColorEnv;
   const unicode = opts.unicode ?? supportsUnicode();
-  return { symbols: unicode ? UNICODE : ASCII, colors, useColor };
+  return { symbols: unicode ? UNICODE : ASCII, colors, useColor, unicode };
 }
 
 export function supportsUnicode(): boolean {

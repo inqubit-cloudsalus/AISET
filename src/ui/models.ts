@@ -93,11 +93,18 @@ export interface MigrationRow {
   appliedAt: string | null;
 }
 
+export interface TableCountRow {
+  name: string;
+  rows: number;
+}
+
 export interface DbStatusModel {
   dbPath: string;
   dbExists: boolean;
   current: boolean;
   migrations: MigrationRow[];
+  /** Row counts per data table. Absent when the database could not be opened. */
+  tables?: TableCountRow[];
 }
 
 export interface InitModel {
@@ -114,4 +121,14 @@ export interface TailModel {
   run: RunRow;
   events: EventRow[];
   finished: boolean;
+}
+
+/** The shell's connection banner — every field read from the live database. */
+export interface ShellHeaderModel {
+  version: string;
+  dbPath: string;
+  schemaVersion: string | null;
+  current: boolean;
+  totalRuns: number;
+  totalEvents: number;
 }

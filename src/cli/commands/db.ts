@@ -1,6 +1,7 @@
 import { log } from "../../core/logger.ts";
 import { openDb } from "../../db/client.ts";
 import { isCurrent, migrate, migrationStatus } from "../../db/migrate.ts";
+import { tableCounts } from "../../db/repositories/stats.ts";
 import type { DbStatusModel } from "../../ui/models.ts";
 import { plainDbStatus } from "../../ui/plain.ts";
 import { renderView } from "../../ui/render.tsx";
@@ -22,6 +23,7 @@ export async function runDbMigrate(ctx: Context): Promise<number> {
       applied: m.applied,
       appliedAt: m.appliedAt,
     })),
+    tables: tableCounts(db),
   };
   db.close();
   await log("info", "db.migrate", { applied }, ctx.paths.root);
@@ -55,6 +57,8 @@ export async function runDbStatus(ctx: Context): Promise<number> {
     dbExists: true,
     current: isCurrent(db),
     migrations: migrationStatus(db),
+    // Only meaningful once the schema is current; a behind schema may lack tables.
+    tables: isCurrent(db) ? tableCounts(db) : undefined,
   };
   db.close();
   await renderView({ json: () => model, plain: (theme) => plainDbStatus(model, theme) }, ctx);

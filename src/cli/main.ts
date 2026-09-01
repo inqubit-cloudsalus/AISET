@@ -7,7 +7,8 @@ import { runHome } from "./commands/home.ts";
 import { runInit } from "./commands/init.ts";
 import { runRunsList, runRunsShow, runRunsTail } from "./commands/runs.ts";
 import { runSeed } from "./commands/seed.ts";
-import { type CommandLike, globalsFrom, makeContext } from "./context.ts";
+import { runShell, shellIsAvailable } from "./commands/shell.ts";
+import { type CommandLike, dbExists, globalsFrom, makeContext } from "./context.ts";
 import { VERSION } from "./version.ts";
 
 /**
@@ -38,7 +39,25 @@ const program = withGlobals(
     .version(VERSION, "-v, --version"),
 );
 
-program.action((_opts, cmd: Command) => run(() => runHome(ctx(cmd))));
+/**
+ * Bare `aiset` opens the interactive shell in a terminal and prints the one-shot
+ * dashboard everywhere else, so pipes, CI and `--json` keep today's behaviour.
+ * Before `init` there is no database to hold open, so home explains that instead.
+ */
+program.action((_opts, cmd: Command) =>
+  run(() => {
+    const context = ctx(cmd);
+    return shellIsAvailable(context) && dbExists(context) ? runShell(context) : runHome(context);
+  }),
+);
+
+withGlobals(program.command("shell").description("open the interactive AISET shell")).action(
+  (_opts, cmd: Command) => run(() => runShell(ctx(cmd))),
+);
+
+withGlobals(program.command("home").description("print the dashboard once and exit")).action(
+  (_opts, cmd: Command) => run(() => runHome(ctx(cmd))),
+);
 
 withGlobals(
   program

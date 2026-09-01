@@ -16,6 +16,7 @@ execution engine for agent runs, never a second agent runtime.
     src/ui/        theme, Ink views, plain-text renderers, view models
     src/db/        client, migrations, repositories, Zod row schemas
     src/core/      config, ULID ids, JSONL logger, errors, paths
+    src/shell/     interactive REPL: session, slash commands, prompt state
     src/ai/        model registry (wired, no consumer yet)
 
 Commands call repositories; repositories own all SQL. Runtime state lives in

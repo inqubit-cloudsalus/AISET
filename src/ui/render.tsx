@@ -55,3 +55,27 @@ export async function renderView(view: View, opts: OutputOptions = {}): Promise<
   const instance = render(await view.ink(theme));
   await instance.waitUntilExit();
 }
+
+/**
+ * Mounts a long-lived interactive app (the shell) rather than a one-shot View.
+ * `renderView`'s json/plain fan-out does not apply: the caller has already
+ * established that the environment is an interactive terminal.
+ *
+ * The app takes the alternate screen, as vim and less do. Without it the first
+ * frame is painted wherever the cursor happened to be — usually the bottom line
+ * — so the terminal scrolls to make room and the top of the header is cut off
+ * until the next redraw. It also means the shell leaves the scrollback it found
+ * exactly as it was.
+ */
+export async function renderApp(
+  element: ReactElement,
+  opts: { stdin?: NodeJS.ReadStream } = {},
+): Promise<void> {
+  const { render } = await import("ink");
+  const instance = render(element, {
+    exitOnCtrlC: false,
+    stdin: opts.stdin,
+    alternateScreen: true,
+  });
+  await instance.waitUntilExit();
+}

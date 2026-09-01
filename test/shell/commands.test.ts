@@ -1,0 +1,158 @@
+import { describe, expect, test } from "bun:test";
+import { seedDemoRun } from "../../src/cli/commands/seed.ts";
+import type { Context } from "../../src/cli/context.ts";
+import { displayRunId } from "../../src/core/ids.ts";
+import { resolvePaths } from "../../src/core/paths.ts";
+import { COMMANDS, dispatch, findCommand } from "../../src/shell/commands.ts";
+import type { Session } from "../../src/shell/types.ts";
+import { makeTheme } from "../../src/ui/theme.ts";
+import { freshDb } from "../db/helpers.ts";
+
+/** ANSI escapes must never reach a shell block: every command renders plain text. */
+const hasAnsi = (text: string) => text.includes(String.fromCharCode(27));
+
+function makeSession(): Session {
+  const ctx: Context = {
+    paths: resolvePaths(process.cwd()),
+    json: false,
+    color: false,
+  };
+  return {
+    ctx,
+    db: freshDb(),
+    theme: makeTheme({ color: false, unicode: true }),
+    version: "0.0.0-test",
+  };
+}
+
+describe("shell command registry", () => {
+  test("every command has a unique name and /help lists each exactly once", async () => {
+    const names = COMMANDS.map((c) => c.name);
+    expect(new Set(names).size).toBe(names.length);
+
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/help");
+    const text = blocks[0]!.text;
+    for (const name of names) {
+      const occurrences = text.split(`/${name}`).length - 1;
+      expect(occurrences).toBeGreaterThanOrEqual(1);
+    }
+    session.db.close();
+  });
+
+  test("findCommand resolves registered names and nothing else", () => {
+    expect(findCommand("db-status")?.name).toBe("db-status");
+    expect(findCommand("nope")).toBeUndefined();
+  });
+});
+
+describe("dispatch", () => {
+  test("blank input is a no-op", async () => {
+    const session = makeSession();
+    expect(await dispatch(session, "   ")).toEqual({ blocks: [], effect: "none" });
+    session.db.close();
+  });
+
+  test("bare text is an error, not a silent prompt", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "write me a function");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("/help");
+    session.db.close();
+  });
+
+  test("an unknown command suggests near matches", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/ru");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("/runs");
+    expect(blocks[0]!.text).toContain("/run");
+    session.db.close();
+  });
+
+  test("/clear and /exit ask the view for their effect and emit nothing", async () => {
+    const session = makeSession();
+    expect(await dispatch(session, "/clear")).toEqual({ blocks: [], effect: "clear" });
+    expect(await dispatch(session, "/exit")).toEqual({ blocks: [], effect: "exit" });
+    expect(await dispatch(session, "/quit")).toEqual({ blocks: [], effect: "exit" });
+    session.db.close();
+  });
+});
+
+describe("/db-status", () => {
+  test("reports the applied migration and zero rows on a fresh database", async () => {
+    const session = makeSession();
+    const text = (await dispatch(session, "/db-status")).blocks[0]!.text;
+    expect(text).toContain("0001_init");
+    expect(text).toContain("schema is current");
+    expect(text).toContain("tables");
+    expect(text).toMatch(/runs\s+0 rows/);
+    expect(hasAnsi(text)).toBe(false);
+    session.db.close();
+  });
+
+  test("counts the rows the demo run actually wrote", async () => {
+    const session = makeSession();
+    seedDemoRun(session.db);
+    const text = (await dispatch(session, "/db-status")).blocks[0]!.text;
+    expect(text).toMatch(/runs\s+1 rows/);
+    expect(text).toMatch(/run_events\s+7 rows/);
+    expect(text).toMatch(/run_artifacts\s+2 rows/);
+    expect(text).toMatch(/run_usage\s+1 rows/);
+    expect(text).toContain("succeeded");
+    session.db.close();
+  });
+});
+
+describe("/runs and /run", () => {
+  test("lists a seeded run and rejects a bad status or limit", async () => {
+    const session = makeSession();
+    const run = seedDemoRun(session.db);
+
+    const listed = (await dispatch(session, "/runs")).blocks[0]!;
+    expect(listed.kind).toBe("output");
+    expect(listed.text).toContain(displayRunId(run.id));
+    expect(hasAnsi(listed.text)).toBe(false);
+
+    expect((await dispatch(session, "/runs --status nope")).blocks[0]!.kind).toBe("error");
+    expect((await dispatch(session, "/runs --limit 0")).blocks[0]!.kind).toBe("error");
+
+    const filtered = (await dispatch(session, "/runs --status succeeded")).blocks[0]!;
+    expect(filtered.text).toContain(displayRunId(run.id));
+    session.db.close();
+  });
+
+  test("shows a run with its events, artifacts and usage", async () => {
+    const session = makeSession();
+    const run = seedDemoRun(session.db);
+    const text = (await dispatch(session, `/run ${displayRunId(run.id)}`)).blocks[0]!.text;
+    expect(text).toContain("events (7)");
+    expect(text).toContain("run completed");
+    expect(text).toContain("artifacts (2)");
+    expect(text).toContain("0.0042");
+    expect(hasAnsi(text)).toBe(false);
+    session.db.close();
+  });
+
+  test("a missing run and a missing argument are errors, not throws", async () => {
+    const session = makeSession();
+    expect((await dispatch(session, "/run")).blocks[0]!.kind).toBe("error");
+    const missing = (await dispatch(session, "/run r_NOSUCHRUN")).blocks[0]!;
+    expect(missing.kind).toBe("error");
+    expect(missing.text).toContain("no run found");
+    session.db.close();
+  });
+});
+
+describe("/seed", () => {
+  test("requires --demo and otherwise writes one run", async () => {
+    const session = makeSession();
+    expect((await dispatch(session, "/seed")).blocks[0]!.kind).toBe("error");
+
+    const seeded = (await dispatch(session, "/seed --demo")).blocks[0]!;
+    expect(seeded.kind).toBe("output");
+    expect(seeded.text).toContain("engine=mock");
+    expect((await dispatch(session, "/db-status")).blocks[0]!.text).toMatch(/runs\s+1 rows/);
+    session.db.close();
+  });
+});

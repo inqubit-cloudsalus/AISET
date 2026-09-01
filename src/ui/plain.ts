@@ -139,9 +139,18 @@ export function plainDbStatus(model: DbStatusModel, theme: Theme): string {
       `  ${symbol} ${m.version.padEnd(20)} ${m.appliedAt ? formatTimestamp(m.appliedAt) : "pending"}`,
     );
   }
+  if (model.tables) {
+    lines.push("", "tables");
+    for (const t of model.tables) {
+      lines.push(`  ${t.name.padEnd(20)} ${String(t.rows).padStart(6)} rows`);
+    }
+  }
   lines.push("", model.current ? "schema is current" : "schema is behind — run 'aiset db migrate'");
   return lines.join("\n");
 }
+
+// The shell's header lives in `banner.ts`: it is a fixed region above the
+// viewport rather than a rendered block, so `/clear` cannot take it away.
 
 export function plainInit(model: InitModel, theme: Theme): string {
   const line = (created: boolean, what: string) =>
