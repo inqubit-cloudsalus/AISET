@@ -5,6 +5,7 @@
 import type {
   DbStatusModel,
   DoctorModel,
+  EventRow,
   HomeModel,
   InitModel,
   RunDetailModel,
@@ -13,6 +14,17 @@ import type {
   TailModel,
 } from "./models.ts";
 import { formatDuration, formatTimestamp, type StatusTone, type Theme, truncate } from "./theme.ts";
+
+/**
+ * The trailing half of an event line: the agent that produced it, then its
+ * message. A run driven by OpenCode is multi-agent, so which agent spoke is
+ * part of the record, not decoration.
+ */
+export function eventDetail(event: EventRow): string {
+  const agent = event.agent ? ` @${event.agent}` : "";
+  const message = event.message ? ` ${event.message}` : "";
+  return `${agent}${message}`;
+}
 
 function mark(theme: Theme, tone: StatusTone): string {
   return tone === "ok"
@@ -99,7 +111,7 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
   lines.push("", `events (${model.eventCount})`);
   if (model.showEvents && model.events.length > 0) {
     for (const e of model.events) {
-      const msg = e.message ? ` ${e.message}` : "";
+      const msg = eventDetail(e);
       lines.push(
         `  ${String(e.seq).padStart(4)} ${formatTimestamp(e.ts)} ${e.type.padEnd(9)}${msg}`,
       );
@@ -172,7 +184,7 @@ export function plainInit(model: InitModel, theme: Theme): string {
 export function plainTail(model: TailModel, theme: Theme): string {
   const lines = [`${theme.symbols.accent} tail ${model.run.displayId} (${model.run.status})`];
   for (const e of model.events) {
-    const msg = e.message ? ` ${e.message}` : "";
+    const msg = eventDetail(e);
     lines.push(`  ${String(e.seq).padStart(4)} ${formatTimestamp(e.ts)} ${e.type.padEnd(9)}${msg}`);
   }
   if (model.finished) lines.push(`  ${theme.symbols.ok} run ${model.run.status}`);

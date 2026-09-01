@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { openDb } from "../../src/db/client.ts";
-import { appliedVersions, isCurrent, migrate, migrationStatus } from "../../src/db/migrate.ts";
+import {
+  appliedVersions,
+  availableMigrations,
+  isCurrent,
+  migrate,
+  migrationStatus,
+} from "../../src/db/migrate.ts";
 
 describe("migrations", () => {
   test("applies 0001_init and reports current", () => {
@@ -21,6 +27,30 @@ describe("migrations", () => {
       .all() as { version: string; n: number }[];
     for (const r of rows) expect(r.n).toBe(1);
     expect(appliedVersions(db).size).toBe(rows.length);
+    db.close();
+  });
+
+  test("0002 adds the multi-agent columns on top of an existing 0001 database", () => {
+    const db = openDb(":memory:");
+    // Apply 0001 alone, the way a database created before the adapter looks.
+    const init = availableMigrations()[0]!;
+    expect(init.version).toBe("0001_init");
+    db.exec(init.sql);
+    db.query("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(
+      init.version,
+      new Date().toISOString(),
+    );
+    expect(isCurrent(db)).toBe(false);
+
+    expect(migrate(db)).toEqual(["0002_agents"]);
+    expect(isCurrent(db)).toBe(true);
+
+    const column = (table: string, name: string) =>
+      (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+        (c) => c.name === name,
+      );
+    expect(column("run_events", "agent")).toBe(true);
+    expect(column("runs", "opencode_session_id")).toBe(true);
     db.close();
   });
 

@@ -2,7 +2,7 @@ import { nowIso } from "../../core/ids.ts";
 import type { Db } from "../client.ts";
 import { type EventType, parseRows, type RunEvent, RunEventSchema } from "../types.ts";
 
-const COLUMNS = "id, run_id, seq, ts, type, level, message, data";
+const COLUMNS = "id, run_id, seq, ts, type, level, message, data, agent";
 
 export interface AppendEventInput {
   runId: string;
@@ -11,6 +11,8 @@ export interface AppendEventInput {
   message?: string | null;
   ts?: string;
   data?: unknown;
+  /** OpenCode agent that produced the event; omitted for events AISET itself writes. */
+  agent?: string | null;
 }
 
 /**
@@ -23,8 +25,8 @@ export function appendEvent(db: Db, input: AppendEventInput): RunEvent {
       .query("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM run_events WHERE run_id = ?")
       .get(input.runId) as { next: number };
     db.query(
-      `INSERT INTO run_events (run_id, seq, ts, type, level, message, data)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO run_events (run_id, seq, ts, type, level, message, data, agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.runId,
       row.next,
@@ -33,6 +35,7 @@ export function appendEvent(db: Db, input: AppendEventInput): RunEvent {
       input.level ?? "info",
       input.message ?? null,
       input.data === undefined ? null : JSON.stringify(input.data),
+      input.agent ?? null,
     );
     return row.next;
   });

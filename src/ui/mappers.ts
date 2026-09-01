@@ -34,6 +34,7 @@ export function toEventRow(event: RunEvent): EventRow {
     type: event.type,
     level: event.level,
     message: event.message,
+    agent: event.agent,
     tone: toneForEvent(event),
   };
 }

@@ -53,6 +53,8 @@ export interface EventRow {
   type: string;
   level: string;
   message: string | null;
+  /** OpenCode agent that produced the event; null for events AISET itself wrote. */
+  agent: string | null;
   tone: StatusTone;
 }
 

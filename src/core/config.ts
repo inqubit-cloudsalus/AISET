@@ -11,6 +11,20 @@ export const ConfigSchema = z.object({
   provider: z.enum(["anthropic", "openai", "openrouter"]),
   model: z.string().min(1),
   createdAt: z.string(),
+  /** How the adapter reaches OpenCode. Optional so older config.json files still parse. */
+  opencode: z
+    .object({
+      bin: z.string().min(1).default("opencode"),
+      hostname: z.string().min(1).default("127.0.0.1"),
+      /** 0 = let OpenCode pick a free port. */
+      port: z.number().int().min(0).max(65535).default(0),
+      /** Primary agent for a run; OpenCode's own default when unset. */
+      agent: z.string().min(1).optional(),
+      /** "provider/model"; OpenCode's configured default when unset. */
+      model: z.string().min(1).optional(),
+      timeoutMs: z.number().int().positive().default(600_000),
+    })
+    .default(() => ({ bin: "opencode", hostname: "127.0.0.1", port: 0, timeoutMs: 600_000 })),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -22,6 +36,7 @@ export function defaultConfig(project: string): Config {
     provider: "anthropic",
     model: "claude-sonnet-5",
     createdAt: new Date().toISOString(),
+    opencode: { bin: "opencode", hostname: "127.0.0.1", port: 0, timeoutMs: 600_000 },
   };
 }
 

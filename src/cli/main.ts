@@ -5,6 +5,7 @@ import { runDbMigrate, runDbStatus } from "./commands/db.ts";
 import { runDoctor } from "./commands/doctor.ts";
 import { runHome } from "./commands/home.ts";
 import { runInit } from "./commands/init.ts";
+import { runRun } from "./commands/run.ts";
 import { runRunsList, runRunsShow, runRunsTail } from "./commands/runs.ts";
 import { runSeed } from "./commands/seed.ts";
 import { runShell, shellIsAvailable } from "./commands/shell.ts";
@@ -70,6 +71,20 @@ withGlobals(
     .command("doctor")
     .description("check bun, the database, opencode and provider key presence"),
 ).action((_opts, cmd: Command) => run(() => runDoctor(ctx(cmd))));
+
+withGlobals(
+  program
+    .command("run <prompt...>")
+    .description("launch a multi-agent OpenCode run and record it")
+    .option("--agent <name>", "primary OpenCode agent (default: OpenCode's own)")
+    .option("--model <provider/model>", "model for the run, e.g. opencode/big-pickle")
+    .option("--workdir <path>", "directory OpenCode runs in (default: cwd)")
+    .option("--timeout <ms>", "give up and record a timeout after this long")
+    .option("--task <id>", "external task reference, e.g. T-001")
+    .option("--detach", "print the run id and do not follow the events"),
+).action((prompt: string[], opts, cmd: Command) =>
+  run(() => runRun(ctx(cmd), prompt.join(" "), opts)),
+);
 
 const runs = program.command("runs").description("inspect recorded runs");
 

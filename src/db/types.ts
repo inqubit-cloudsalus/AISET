@@ -55,6 +55,8 @@ export const RunSchema = z.object({
   exit_code: z.number().int().nullable(),
   workdir: z.string().nullable(),
   parent_run_id: z.string().nullable(),
+  /** Root OpenCode session this run drives; null for mock and pre-adapter runs. */
+  opencode_session_id: z.string().nullable(),
   schema_version: z.string(),
   meta: jsonColumn,
 });
@@ -69,6 +71,8 @@ export const RunEventSchema = z.object({
   level: z.string(),
   message: z.string().nullable(),
   data: jsonColumn,
+  /** OpenCode agent that produced the event ("build", "explore", …); null if unattributed. */
+  agent: z.string().nullable(),
 });
 export type RunEvent = z.infer<typeof RunEventSchema>;
 

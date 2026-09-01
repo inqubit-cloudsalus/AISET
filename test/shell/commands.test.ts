@@ -156,3 +156,29 @@ describe("/seed", () => {
     session.db.close();
   });
 });
+
+describe("/launch", () => {
+  test("is registered and does not shadow the /run viewer", () => {
+    expect(findCommand("launch")).toBeDefined();
+    expect(findCommand("run")?.summary).toContain("show one run");
+  });
+
+  test("a missing prompt is an error, not a launched run", async () => {
+    const session = makeSession();
+    const result = (await dispatch(session, "/launch")).blocks[0]!;
+    expect(result.kind).toBe("error");
+    expect(result.text).toContain("usage: /launch");
+    // Nothing reached the engine, so nothing was recorded.
+    expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+
+  test("a bad --timeout is rejected before OpenCode is contacted", async () => {
+    const session = makeSession();
+    const result = (await dispatch(session, "/launch --timeout nope write a test")).blocks[0]!;
+    expect(result.kind).toBe("error");
+    expect(result.text).toContain("--timeout must be");
+    expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+});

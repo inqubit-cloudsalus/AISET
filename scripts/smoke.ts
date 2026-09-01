@@ -128,7 +128,22 @@ try {
   assert(!/\[/.test(plain.stdout), "plain output contains no ANSI escapes");
   assert(plain.stdout.includes(seeded.displayId), "plain output lists the run");
 
-  // 7. doctor last, so a broken DB would already have surfaced
+  // 7. `run` guardrails. The engine itself is never launched here — a smoke run
+  // must stay offline and free — so only the paths that fail before OpenCode is
+  // reached are exercised.
+  const runHelp = await aiset(workdir, "run", "--help");
+  assert(runHelp.code === 0, "run --help exits 0");
+  assert(runHelp.stdout.includes("--agent"), "run --help documents --agent");
+  assert(runHelp.stdout.includes("--detach"), "run --help documents --detach");
+
+  const badTimeout = await aiset(workdir, "run", "hello", "--timeout", "nope");
+  assert(badTimeout.code === 1, "run with a bad --timeout exits 1");
+  assert(badTimeout.stderr.includes("--timeout must be"), "run explains a bad --timeout");
+
+  const missingPrompt = await aiset(workdir, "run");
+  assert(missingPrompt.code !== 0, "run without a prompt exits non-zero");
+
+  // 8. doctor last, so a broken DB would already have surfaced
   const doctor = await aiset(workdir, "doctor");
   assert(doctor.code === 0, "doctor exits 0");
   assert(!/sk-|api[_-]?key=\S/i.test(doctor.stdout), "doctor never prints a key value");

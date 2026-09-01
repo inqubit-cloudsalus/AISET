@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { KeyValue, Panel, StatusLine } from "../components/index.tsx";
 import type { RunDetailModel } from "../models.ts";
+import { eventDetail } from "../plain.ts";
 import { formatDuration, formatTimestamp, type Theme } from "../theme.ts";
 
 export function RunDetailView({ model, theme }: { model: RunDetailModel; theme: Theme }) {
@@ -35,7 +36,7 @@ export function RunDetailView({ model, theme }: { model: RunDetailModel; theme: 
               theme={theme}
               tone={e.tone}
               label={`${String(e.seq).padStart(4)} ${e.type.padEnd(9)}`}
-              detail={`${formatTimestamp(e.ts)}${e.message ? `  ${e.message}` : ""}`}
+              detail={`${formatTimestamp(e.ts)}${eventDetail(e)}`}
             />
           ))
         ) : (

@@ -11,7 +11,7 @@ import {
 } from "../types.ts";
 
 const COLUMNS = `id, task_id, task_title, engine, model, status, verdict, started_at,
-  ended_at, exit_code, workdir, parent_run_id, schema_version, meta`;
+  ended_at, exit_code, workdir, parent_run_id, opencode_session_id, schema_version, meta`;
 
 export interface CreateRunInput {
   id?: string;
@@ -23,6 +23,7 @@ export interface CreateRunInput {
   startedAt?: string;
   workdir?: string | null;
   parentRunId?: string | null;
+  opencodeSessionId?: string | null;
   meta?: unknown;
 }
 
@@ -30,8 +31,8 @@ export function createRun(db: Db, input: CreateRunInput): Run {
   const id = input.id ?? newRunId();
   db.query(
     `INSERT INTO runs (id, task_id, task_title, engine, model, status, started_at,
-       workdir, parent_run_id, meta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       workdir, parent_run_id, opencode_session_id, meta)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.taskId ?? null,
@@ -42,6 +43,7 @@ export function createRun(db: Db, input: CreateRunInput): Run {
     input.startedAt ?? nowIso(),
     input.workdir ?? null,
     input.parentRunId ?? null,
+    input.opencodeSessionId ?? null,
     input.meta === undefined ? null : JSON.stringify(input.meta),
   );
   return getRun(db, id);
@@ -80,6 +82,7 @@ export interface UpdateRunInput {
   verdict?: Verdict | null;
   endedAt?: string | null;
   exitCode?: number | null;
+  opencodeSessionId?: string | null;
 }
 
 export function updateRun(db: Db, id: string, patch: UpdateRunInput): Run {
@@ -93,6 +96,7 @@ export function updateRun(db: Db, id: string, patch: UpdateRunInput): Run {
   if (patch.verdict !== undefined) set("verdict", patch.verdict);
   if (patch.endedAt !== undefined) set("ended_at", patch.endedAt);
   if (patch.exitCode !== undefined) set("exit_code", patch.exitCode);
+  if (patch.opencodeSessionId !== undefined) set("opencode_session_id", patch.opencodeSessionId);
   if (sets.length === 0) return getRun(db, id);
   getRun(db, id); // 404s before a silent no-op UPDATE
   db.query(`UPDATE runs SET ${sets.join(", ")} WHERE id = ?`).run(...values, id);

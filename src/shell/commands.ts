@@ -1,5 +1,6 @@
 import { collectChecks } from "../cli/commands/doctor.ts";
 import { seedDemoRun } from "../cli/commands/seed.ts";
+import { readConfig } from "../core/config.ts";
 import { displayRunId, normalizeRunId } from "../core/ids.ts";
 import { isCurrent, migrationStatus } from "../db/migrate.ts";
 import { listArtifacts } from "../db/repositories/artifacts.ts";
@@ -8,9 +9,16 @@ import { countByStatus, countRuns, findRun, listRuns } from "../db/repositories/
 import { tableCounts } from "../db/repositories/stats.ts";
 import { usageTotals } from "../db/repositories/usage.ts";
 import { RUN_STATUSES, type RunStatus } from "../db/types.ts";
+import { start } from "../opencode/adapter.ts";
 import { toArtifactRow, toEventRow, toRunRow } from "../ui/mappers.ts";
 import type { DbStatusModel, RunDetailModel, RunListModel } from "../ui/models.ts";
-import { plainDbStatus, plainDoctor, plainRunDetail, plainRunList } from "../ui/plain.ts";
+import {
+  plainDbStatus,
+  plainDoctor,
+  plainRunDetail,
+  plainRunList,
+  plainTail,
+} from "../ui/plain.ts";
 import { toneForVerdict } from "../ui/theme.ts";
 import type { Session, ShellResult, SlashCommand } from "./types.ts";
 
@@ -167,6 +175,66 @@ const seed: SlashCommand = {
   },
 };
 
+const launch: SlashCommand = {
+  name: "launch",
+  summary: "launch a multi-agent OpenCode run in this directory",
+  usage: "/launch <prompt>",
+  async run(session, args) {
+    const { flags, positional } = parseFlags(args);
+    const prompt = positional.join(" ").trim();
+    if (!prompt) return failure("usage: /launch <prompt>");
+
+    const timeoutRaw = flags.get("timeout");
+    const timeoutMs = timeoutRaw === undefined ? undefined : Number.parseInt(timeoutRaw, 10);
+    if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      return failure(`launch: --timeout must be a positive number of ms, got: ${timeoutRaw}`);
+    }
+
+    const config = await readConfig();
+    const oc = config?.opencode;
+
+    let handle: Awaited<ReturnType<typeof start>>;
+    try {
+      handle = await start(
+        session.db,
+        {
+          prompt,
+          taskId: flags.get("task") ?? null,
+          agent: flags.get("agent") ?? oc?.agent,
+          model: flags.get("model") ?? oc?.model ?? null,
+          workdir: flags.get("workdir"),
+        },
+        {
+          bin: oc?.bin,
+          hostname: oc?.hostname,
+          port: oc?.port,
+          timeoutMs: timeoutMs ?? oc?.timeoutMs ?? 600_000,
+        },
+      );
+    } catch (err) {
+      return failure(`launch: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // A shell command renders one committed block, so the timeline is shown
+    // when the run closes rather than streamed. It is already in the database
+    // while it runs: `/run <id>` from another shell shows it live.
+    await handle.finished.catch(() => {});
+    const run = findRun(session.db, handle.runId);
+    if (!run) return failure(`launch: run ${handle.runId} vanished mid-flight`);
+
+    return output(
+      plainTail(
+        {
+          run: toRunRow(run),
+          events: listEvents(session.db, handle.runId).map(toEventRow),
+          finished: true,
+        },
+        session.theme,
+      ),
+    );
+  },
+};
+
 const clear: SlashCommand = {
   name: "clear",
   summary: "clear the transcript",
@@ -191,6 +259,7 @@ export const COMMANDS: SlashCommand[] = [
   dbStatus,
   runsList,
   runShow,
+  launch,
   doctor,
   seed,
   clear,
