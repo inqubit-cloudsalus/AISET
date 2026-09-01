@@ -34,3 +34,6 @@ build/
 .claude/settings.local.json
 scratch/
 tmp/
+
+# AISET runtime state
+.aiset/
