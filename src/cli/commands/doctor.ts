@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { createElement } from "react";
+import { hasCredentials, PROVIDER_ENV } from "../../ai/provider.ts";
 import { readConfig } from "../../core/config.ts";
 import { openDb } from "../../db/client.ts";
 import { isCurrent, migrationStatus } from "../../db/migrate.ts";
@@ -7,11 +8,6 @@ import type { CheckResult, DoctorModel } from "../../ui/models.ts";
 import { plainDoctor } from "../../ui/plain.ts";
 import { renderView } from "../../ui/render.tsx";
 import type { Context } from "../context.ts";
-
-const PROVIDER_ENV: Record<string, string> = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-};
 
 function pass(name: string, detail: string): CheckResult {
   return { name, tone: "ok", detail, ok: true };
@@ -80,8 +76,8 @@ export async function collectChecks(ctx: Context): Promise<DoctorModel> {
   // Provider key: presence only. The value is never read into the output.
   const config = await readConfig(ctx.paths.root).catch(() => null);
   const provider = config?.provider ?? "anthropic";
-  const envVar = PROVIDER_ENV[provider] ?? "ANTHROPIC_API_KEY";
-  const present = (process.env[envVar] ?? "") !== "";
+  const envVar = PROVIDER_ENV[provider];
+  const present = hasCredentials(provider);
   checks.push(
     present
       ? pass("provider key", `${envVar} present`)

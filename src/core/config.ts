@@ -8,7 +8,7 @@ export const ConfigSchema = z.object({
   project: z.string().min(1),
   engine: z.enum(["opencode", "mock"]),
   /** Provider for AISET's own small model calls — never a second agent runtime. */
-  provider: z.enum(["anthropic", "openai"]),
+  provider: z.enum(["anthropic", "openai", "openrouter"]),
   model: z.string().min(1),
   createdAt: z.string(),
 });
