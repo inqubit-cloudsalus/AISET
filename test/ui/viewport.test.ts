@@ -121,10 +121,10 @@ describe("layout budget", () => {
   test("the shell fits inside the terminal at every usable size", () => {
     // The first frame is painted in one go: drawing more rows than the terminal
     // has makes it scroll, which is what cut the top off the header on launch.
-    // The wordmark header is only chosen above 22 rows (see showsWordmark), and
+    // The logo header is only chosen at 24 rows or more (see showsLogo), and
     // the compact one needs the chrome plus a minimum transcript.
-    const smallest = { 2: MIN_VIEWPORT_ROWS + 2 + CHROME_ROWS, 7: 22 } as const;
-    for (const headerRows of [2, 7] as const) {
+    const smallest = { 2: MIN_VIEWPORT_ROWS + 2 + CHROME_ROWS, 8: 24 } as const;
+    for (const headerRows of [2, 8] as const) {
       for (let rows = smallest[headerRows]; rows <= 80; rows++) {
         expect(totalRows(rows, headerRows)).toBeLessThanOrEqual(rows);
       }
@@ -139,9 +139,9 @@ describe("layout budget", () => {
   });
 
   test("every spare row goes to the transcript", () => {
-    expect(viewportHeight(24, 7)).toBe(24 - 7 - CHROME_ROWS);
-    expect(totalRows(24, 7)).toBe(24);
+    expect(viewportHeight(24, 8)).toBe(24 - 8 - CHROME_ROWS);
+    expect(totalRows(24, 8)).toBe(24);
     // A compact header hands its saved rows straight to the viewport.
-    expect(viewportHeight(24, 2)).toBe(viewportHeight(24, 7) + 5);
+    expect(viewportHeight(24, 2)).toBe(viewportHeight(24, 8) + 6);
   });
 });

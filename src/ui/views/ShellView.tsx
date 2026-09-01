@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dispatch } from "../../shell/commands.ts";
 import { shellHeader } from "../../shell/session.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
-import { headerLines, showsWordmark, WORDMARK_HEIGHT } from "../banner.ts";
+import { headerRows, rowText, type Shade } from "../banner.ts";
 import { Prompt } from "../components/Prompt.tsx";
 import { MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_LINES, type WheelDirection } from "../mouse.ts";
 import { colorForTone, type Theme } from "../theme.ts";
@@ -19,6 +19,14 @@ import {
 
 function tint(theme: Theme, color: string): string | undefined {
   return theme.useColor ? color : undefined;
+}
+
+/**
+ * Depth in the logo: lit faces take the accent, the drop shadow and the back
+ * rank of the team take chrome grey and are dimmed on top of that.
+ */
+function shadeColor(theme: Theme, shade: Shade): string {
+  return shade === "lit" ? theme.colors.accent : theme.colors.chrome;
 }
 
 function colorFor(theme: Theme, kind: ViewportLine["kind"]): string | undefined {
@@ -59,8 +67,7 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
   // Read once: the header describes the handle this session opened, and the
   // counts on it are a connection fact, not a live view of the data.
   const header = useMemo(() => shellHeader(session), [session]);
-  const banner = headerLines(header, theme, { columns, rows });
-  const withWordmark = showsWordmark({ columns, rows });
+  const banner = headerRows(header, theme, { columns, rows });
 
   const height = viewportHeight(rows, banner.length);
   // Two border columns and one column of padding on each side.
@@ -152,19 +159,20 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
 
   return (
     <Box flexDirection="column">
-      {banner.map((line, index) => (
-        // Keyed by content: every header line is distinct, and the header is
+      {banner.map((row) => (
+        // Keyed by content: every header row is distinct, and the header is
         // rebuilt wholesale on resize rather than reordered.
-        <Text
-          key={line}
-          wrap="truncate"
-          color={
-            withWordmark && index < WORDMARK_HEIGHT
-              ? tint(theme, theme.colors.accent)
-              : tint(theme, theme.colors.muted)
-          }
-        >
-          {line}
+        <Text key={rowText(row)} wrap="truncate">
+          {row.map((segment, index) => (
+            <Text
+              // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional runs
+              key={`${index}-${segment.shade}`}
+              color={tint(theme, shadeColor(theme, segment.shade))}
+              dimColor={segment.shade !== "lit"}
+            >
+              {segment.text}
+            </Text>
+          ))}
         </Text>
       ))}
 
