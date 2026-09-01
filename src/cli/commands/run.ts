@@ -4,6 +4,7 @@ import { AisetError } from "../../core/errors.ts";
 import { displayRunId } from "../../core/ids.ts";
 import { listEvents } from "../../db/repositories/events.ts";
 import { findRun } from "../../db/repositories/runs.ts";
+import { isTerminal } from "../../db/types.ts";
 import { start } from "../../opencode/adapter.ts";
 import { toEventRow, toRunRow } from "../../ui/mappers.ts";
 import type { TailModel } from "../../ui/models.ts";
@@ -20,8 +21,6 @@ export interface RunOptions {
   detach?: boolean;
   bin?: string;
 }
-
-const TERMINAL = new Set(["succeeded", "failed", "timeout", "killed"]);
 
 function parseTimeout(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
@@ -86,7 +85,7 @@ export async function runRun(ctx: Context, prompt: string, opts: RunOptions): Pr
     return {
       run: toRunRow(run),
       events: listEvents(db, handle.runId, { afterSeq }).map(toEventRow),
-      finished: TERMINAL.has(run.status),
+      finished: isTerminal(run.status),
     };
   };
 

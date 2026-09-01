@@ -122,6 +122,21 @@ try {
   const missing = await aiset(workdir, "runs", "show", "r_DOESNOTEXIST");
   assert(missing.code === 1, "runs show on an unknown id exits 1");
 
+  // 5b. runs cancel. The seeded run is already closed, so this exercises the
+  // command end to end without an engine: cancel must be a no-op, not a reopen.
+  const cancelDone = await aiset(workdir, "runs", "cancel", seeded.displayId, "--json");
+  assert(cancelDone.code === 0, "runs cancel on a finished run exits 0");
+  const cancelled = json<{
+    run: { status: string };
+    alreadyFinished: boolean;
+    owner: string;
+  }>(cancelDone, "runs cancel");
+  assert(cancelled.alreadyFinished, "runs cancel reports the run had already finished");
+  assert(cancelled.run.status === "succeeded", "runs cancel does not rewrite a closed run");
+
+  const cancelMissing = await aiset(workdir, "runs", "cancel", "r_DOESNOTEXIST");
+  assert(cancelMissing.code === 1, "runs cancel on an unknown id exits 1");
+
   // 6. plain-text fallback never emits ANSI
   const plain = await aiset(workdir, "runs", "list");
   // biome-ignore lint/suspicious/noControlCharactersInRegex: detecting ANSI escapes is the point

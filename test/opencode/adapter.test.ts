@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { listRuns } from "../../src/db/repositories/runs.ts";
-import { capture, kill, observe, start } from "../../src/opencode/adapter.ts";
+import { createRun, listRuns, requestCancel } from "../../src/db/repositories/runs.ts";
+import { cancel, capture, kill, observe, start } from "../../src/opencode/adapter.ts";
 import type { CreateSessionInput, OpenCodeApi, PromptInput } from "../../src/opencode/client.ts";
 import { splitModel } from "../../src/opencode/client.ts";
 import type { OpenCodeEvent } from "../../src/opencode/types.ts";
@@ -56,13 +56,15 @@ function transportFor(api: FakeApi) {
   };
 }
 
-async function runFixture(opts: { hang?: boolean; timeoutMs?: number } = {}) {
+async function runFixture(
+  opts: { hang?: boolean; timeoutMs?: number; cancelPollMs?: number } = {},
+) {
   const db = freshDb();
   const api = new FakeApi(fixtureEvents(), opts.hang ?? false);
   const handle = await start(
     db,
     { prompt: "write sum.ts and a test for it", agent: "build", model: "openrouter/haiku" },
-    { transport: transportFor(api), timeoutMs: opts.timeoutMs },
+    { transport: transportFor(api), timeoutMs: opts.timeoutMs, cancelPollMs: opts.cancelPollMs },
   );
   return { db, api, handle };
 }
@@ -175,6 +177,88 @@ describe("adapter lifecycle: kill and timeout", () => {
 
     expect(again.status).toBe("succeeded");
     expect((await collect(db, handle.runId)).filter((e) => e.type === "end").length).toBe(1);
+    db.close();
+  });
+
+  test("cancel reports it owned the session and closes with exit code 130", async () => {
+    const { db, api, handle } = await runFixture({ hang: true });
+    const result = await cancel(db, handle.runId);
+    await handle.finished;
+
+    expect(result.owner).toBe("local");
+    expect(result.confirmed).toBe(true);
+    expect(result.alreadyFinished).toBe(false);
+    expect(result.run.status).toBe("killed");
+    expect(result.run.exit_code).toBe(130);
+    expect(result.run.cancel_requested_at).not.toBeNull();
+    expect(api.aborted).toEqual([ROOT_SESSION]);
+    db.close();
+  });
+
+  test("cancel on a closed run reports it had already finished", async () => {
+    const { db, api, handle } = await runFixture();
+    await handle.finished;
+    const result = await cancel(db, handle.runId);
+
+    expect(result.alreadyFinished).toBe(true);
+    expect(result.owner).toBe("none");
+    expect(result.run.status).toBe("succeeded");
+    // Nothing was asked of the engine, and no stop was stamped after the fact.
+    expect(api.aborted).toEqual([]);
+    expect(result.run.cancel_requested_at).toBeNull();
+    db.close();
+  });
+
+  /**
+   * The cross-process path: another process only stamps the request, and the
+   * pump that owns the session is the one that reaches OpenCode.
+   */
+  test("a cancel requested elsewhere is picked up by the owning pump", async () => {
+    const db = freshDb();
+    // An empty script that hangs: the run stays open until something stops it.
+    const api = new FakeApi([], true);
+    const handle = await start(
+      db,
+      { prompt: "hang until cancelled" },
+      { transport: transportFor(api), cancelPollMs: 10 },
+    );
+    requestCancel(db, handle.runId);
+    const run = await handle.finished;
+
+    expect(run.status).toBe("killed");
+    expect(api.aborted).toEqual([ROOT_SESSION]);
+    const all = await collect(db, handle.runId);
+    expect(all.filter((e) => e.type === "end").length).toBe(1);
+    db.close();
+  });
+
+  test("cancelling a run whose owner is gone closes it once the grace expires", async () => {
+    const db = freshDb();
+    // A row left behind by a process that died mid-run: running, with a session
+    // this process has no handle for.
+    const orphan = createRun(db, {
+      taskTitle: "orphaned run",
+      engine: "opencode",
+      status: "running",
+      opencodeSessionId: ROOT_SESSION,
+    });
+    const result = await cancel(db, orphan.id, { graceMs: 30, pollMs: 10 });
+
+    expect(result.owner).toBe("remote");
+    expect(result.confirmed).toBe(false);
+    expect(result.run.status).toBe("killed");
+    expect(result.run.exit_code).toBe(130);
+    db.close();
+  });
+
+  test("cancelling a run that never reached the engine closes it immediately", async () => {
+    const db = freshDb();
+    const pending = createRun(db, { taskTitle: "never started", engine: "opencode" });
+    const result = await cancel(db, pending.id);
+
+    expect(result.owner).toBe("none");
+    expect(result.confirmed).toBe(true);
+    expect(result.run.status).toBe("killed");
     db.close();
   });
 

@@ -8,12 +8,20 @@ import type {
   EventRow,
   HomeModel,
   InitModel,
+  RunCancelModel,
   RunDetailModel,
   RunListModel,
   RunRow,
   TailModel,
 } from "./models.ts";
-import { formatDuration, formatTimestamp, type StatusTone, type Theme, truncate } from "./theme.ts";
+import {
+  formatDuration,
+  formatTimestamp,
+  type StatusTone,
+  symbolForTone,
+  type Theme,
+  truncate,
+} from "./theme.ts";
 
 /**
  * The trailing half of an event line: the agent that produced it, then its
@@ -94,6 +102,29 @@ export function plainDoctor(model: DoctorModel, theme: Theme): string {
 export function plainRunList(model: RunListModel, _theme: Theme): string {
   const head = model.filterStatus ? `runs (status=${model.filterStatus})` : "runs";
   return [head, "", ...runTableLines(model.runs)].join("\n");
+}
+
+export function plainRunCancel(model: RunCancelModel, theme: Theme): string {
+  const r = model.run;
+  const lines: string[] = [
+    `${symbolForTone(theme, r.tone)} ${r.displayId} ${r.status}`,
+    "",
+    `task        ${r.taskId ? `${r.taskId} ` : ""}${r.taskTitle}`,
+    `ended       ${model.endedAt ? formatTimestamp(model.endedAt) : "—"}`,
+    `duration    ${formatDuration(r.durationMs)}`,
+    `exit code   ${model.exitCode ?? "—"}`,
+  ];
+  lines.push("", cancelNote(model));
+  return lines.join("\n");
+}
+
+/** One line saying what actually happened to the engine, not just to the row. */
+function cancelNote(model: RunCancelModel): string {
+  if (model.alreadyFinished) return "run had already finished; nothing to cancel";
+  if (model.owner === "none") return "run never reached the engine; closed as killed";
+  if (model.owner === "local") return "OpenCode session aborted and the run closed";
+  if (model.confirmed) return "the process running it stopped the OpenCode session";
+  return "no process confirmed the stop in time; the run was closed anyway";
 }
 
 export function plainRunDetail(model: RunDetailModel, theme: Theme): string {

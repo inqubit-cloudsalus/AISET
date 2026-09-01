@@ -30,7 +30,7 @@ describe("migrations", () => {
     db.close();
   });
 
-  test("0002 adds the multi-agent columns on top of an existing 0001 database", () => {
+  test("later migrations catch up an existing 0001 database", () => {
     const db = openDb(":memory:");
     // Apply 0001 alone, the way a database created before the adapter looks.
     const init = availableMigrations()[0]!;
@@ -42,8 +42,10 @@ describe("migrations", () => {
     );
     expect(isCurrent(db)).toBe(false);
 
-    expect(migrate(db)).toEqual(["0002_agents"]);
+    expect(migrate(db)).toEqual(["0002_agents", "0003_cancel"]);
     expect(isCurrent(db)).toBe(true);
+    // Catching up twice is a no-op, not a duplicate ALTER.
+    expect(migrate(db)).toEqual([]);
 
     const column = (table: string, name: string) =>
       (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
@@ -51,6 +53,7 @@ describe("migrations", () => {
       );
     expect(column("run_events", "agent")).toBe(true);
     expect(column("runs", "opencode_session_id")).toBe(true);
+    expect(column("runs", "cancel_requested_at")).toBe(true);
     db.close();
   });
 

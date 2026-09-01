@@ -5,10 +5,11 @@ import { listArtifacts } from "../../db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../../db/repositories/events.ts";
 import { findRun, listRuns, runDurationMs } from "../../db/repositories/runs.ts";
 import { usageTotals } from "../../db/repositories/usage.ts";
-import { RUN_STATUSES, type RunStatus } from "../../db/types.ts";
+import { isTerminal, RUN_STATUSES, type RunStatus } from "../../db/types.ts";
+import { type CancelResult, cancel } from "../../opencode/adapter.ts";
 import { toArtifactRow, toEventRow, toRunRow } from "../../ui/mappers.ts";
-import type { RunDetailModel, RunListModel, TailModel } from "../../ui/models.ts";
-import { plainRunDetail, plainRunList, plainTail } from "../../ui/plain.ts";
+import type { RunCancelModel, RunDetailModel, RunListModel, TailModel } from "../../ui/models.ts";
+import { plainRunCancel, plainRunDetail, plainRunList, plainTail } from "../../ui/plain.ts";
 import { renderView } from "../../ui/render.tsx";
 import { toneForVerdict } from "../../ui/theme.ts";
 import { type Context, requireDb } from "../context.ts";
@@ -104,7 +105,54 @@ export async function runRunsShow(ctx: Context, id: string, opts: ShowOptions): 
   return 0;
 }
 
-const TERMINAL_STATUSES = new Set(["succeeded", "failed", "timeout", "killed"]);
+export interface CancelOptions {
+  wait?: string;
+}
+
+/**
+ * Stops an active run. The request is recorded in the database, so it reaches
+ * the OpenCode session even when another process is the one driving it.
+ */
+export async function runRunsCancel(
+  ctx: Context,
+  id: string,
+  opts: CancelOptions,
+): Promise<number> {
+  const runId = normalizeRunId(id);
+  const graceMs = opts.wait === undefined ? undefined : Number.parseInt(opts.wait, 10);
+  if (graceMs !== undefined && (!Number.isFinite(graceMs) || graceMs < 0)) {
+    throw new AisetError(`--wait must be a non-negative number of milliseconds, got: ${opts.wait}`);
+  }
+
+  const db = requireDb(ctx);
+  let result: CancelResult;
+  try {
+    if (!findRun(db, runId)) throw new NotFoundError("run", id);
+    result = await cancel(db, runId, { graceMs });
+  } finally {
+    db.close();
+  }
+
+  const model: RunCancelModel = {
+    run: toRunRow(result.run),
+    endedAt: result.run.ended_at,
+    exitCode: result.run.exit_code,
+    cancelRequestedAt: result.run.cancel_requested_at,
+    alreadyFinished: result.alreadyFinished,
+    owner: result.owner,
+    confirmed: result.confirmed,
+  };
+
+  await renderView(
+    {
+      json: () => model,
+      plain: (theme) => plainRunCancel(model, theme),
+    },
+    ctx,
+  );
+  // An unconfirmed stop closed the row on a guess, which is not a clean cancel.
+  return result.confirmed ? 0 : 1;
+}
 
 /**
  * Follows a run's events by polling the database on the `seq` watermark.
@@ -122,7 +170,7 @@ export async function runRunsTail(ctx: Context, id: string): Promise<number> {
       return {
         run: toRunRow(run),
         events: listEvents(db, runId, { afterSeq }).map(toEventRow),
-        finished: TERMINAL_STATUSES.has(run.status),
+        finished: isTerminal(run.status),
       };
     } finally {
       db.close();

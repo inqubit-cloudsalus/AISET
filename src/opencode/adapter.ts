@@ -1,14 +1,20 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { AisetError } from "../core/errors.ts";
 import { nowIso } from "../core/ids.ts";
 import { log } from "../core/logger.ts";
 import type { Db } from "../db/client.ts";
 import { addArtifact, listArtifacts } from "../db/repositories/artifacts.ts";
 import { appendEvent, listEvents } from "../db/repositories/events.ts";
-import { createRun, getRun, updateRun } from "../db/repositories/runs.ts";
+import { createRun, getRun, requestCancel, updateRun } from "../db/repositories/runs.ts";
 import { listUsage, recordUsage, usageTotals } from "../db/repositories/usage.ts";
-import type { Run, RunArtifact, RunEvent, RunStatus, RunUsage } from "../db/types.ts";
+import {
+  type Run,
+  type RunArtifact,
+  type RunEvent,
+  type RunStatus,
+  type RunUsage,
+  TERMINAL_STATUSES,
+} from "../db/types.ts";
 import { HttpOpenCodeApi, type OpenCodeApi } from "./client.ts";
 import { EventMapper } from "./mapper.ts";
 import { type OpenCodeServer, startServer } from "./server.ts";
@@ -20,6 +26,8 @@ export interface AdapterOptions {
   port?: number;
   /** Watchdog: a run still open after this long is recorded as `timeout`. */
   timeoutMs?: number;
+  /** How often the pump looks for a cancel requested by another process. */
+  cancelPollMs?: number;
   /** Injected in tests so no OpenCode process is ever spawned. */
   transport?: { api: OpenCodeApi; sessionId: string; stop?: () => Promise<void> };
 }
@@ -49,7 +57,13 @@ interface LiveRun {
 /** Live runs owned by this process, so `kill` can reach the OpenCode session. */
 const live = new Map<string, LiveRun>();
 
-const TERMINAL: ReadonlySet<RunStatus> = new Set(["succeeded", "failed", "timeout", "killed"]);
+const TERMINAL = TERMINAL_STATUSES;
+
+/** How often the pump checks the database for a cancel asked for elsewhere. */
+const CANCEL_POLL_MS = 500;
+
+/** How long `cancel` waits for another process's pump to close the run. */
+const CANCEL_GRACE_MS = 5_000;
 
 function title(task: StartTask): string {
   if (task.title) return task.title;
@@ -125,7 +139,7 @@ export async function start(
   live.set(run.id, handle);
 
   const stop = opts.transport?.stop ?? (() => server?.stop() ?? Promise.resolve());
-  const finished = pump(db, run.id, workdir, handle, opts.timeoutMs).finally(async () => {
+  const finished = pump(db, run.id, workdir, handle, opts).finally(async () => {
     live.delete(run.id);
     abort.abort();
     await stop();
@@ -148,11 +162,20 @@ async function pump(
   runId: string,
   workdir: string,
   handle: LiveRun,
-  timeoutMs?: number,
+  opts: AdapterOptions,
 ): Promise<Run> {
   const { abort, api } = handle;
+  const { timeoutMs } = opts;
   const mapper = new EventMapper(handle.sessionId);
   let terminal: RunStatus | null = null;
+
+  // A cancel from another process can only reach the engine through whoever
+  // owns the session, so the owner watches the database for the request.
+  const canceller = setInterval(() => {
+    if (getRun(db, runId).cancel_requested_at === null) return;
+    clearInterval(canceller);
+    void stopSession(handle);
+  }, opts.cancelPollMs ?? CANCEL_POLL_MS);
 
   const watchdog =
     timeoutMs === undefined
@@ -190,6 +213,7 @@ async function pump(
     }
   } finally {
     if (watchdog) clearTimeout(watchdog);
+    clearInterval(canceller);
   }
 
   // An aborted stream with no verdict of its own is a kill, not a success.
@@ -317,22 +341,97 @@ export function capture(db: Db, runId: string): Capture {
 }
 
 /**
- * Stops a run. Aborts the OpenCode session when this process owns it; either
- * way the run is closed in SQLite rather than left stuck in `running`.
+ * Ends a live run's session on purpose. `killed` is set first so the pump reads
+ * the aborted stream as a cancellation rather than a failure.
  */
-export async function kill(db: Db, runId: string): Promise<Run> {
+async function stopSession(handle: LiveRun): Promise<void> {
+  handle.killed = true;
+  await handle.api.abort(handle.sessionId).catch(() => {});
+  handle.abort.abort();
+}
+
+/** Who was in a position to actually stop the engine. */
+export type CancelOwner = "local" | "remote" | "none";
+
+export interface CancelResult {
+  run: Run;
+  owner: CancelOwner;
+  /** True when the run was already terminal and this call changed nothing. */
+  alreadyFinished: boolean;
+  /** True when a remote owner closed the run before the grace expired. */
+  confirmed: boolean;
+}
+
+export interface CancelOptions {
+  /** How long to wait for another process's pump to close the run. */
+  graceMs?: number;
+  pollMs?: number;
+}
+
+/**
+ * Stops a run from any process.
+ *
+ * The request is always recorded, so the owner of the OpenCode session sees it
+ * even when that is a different process. When this process owns the run the
+ * session is aborted here and now; when another one does, we wait for its pump
+ * to close the run and only finalize ourselves if the grace expires — a run is
+ * never left stuck in `running`, and it is never closed twice.
+ */
+export async function cancel(
+  db: Db,
+  runId: string,
+  opts: CancelOptions = {},
+): Promise<CancelResult> {
   const run = getRun(db, runId);
-  if (TERMINAL.has(run.status)) return run;
+  if (TERMINAL.has(run.status)) {
+    return { run, owner: "none", alreadyFinished: true, confirmed: true };
+  }
+
+  requestCancel(db, runId);
   const handle = live.get(runId);
   if (handle) {
-    handle.killed = true;
-    await handle.api.abort(handle.sessionId).catch(() => {});
-    handle.abort.abort();
-  } else if (run.opencode_session_id === null) {
-    throw new AisetError(
-      `run ${runId} has no OpenCode session to stop`,
-      "it never reached the engine; it will be closed as killed",
-    );
+    await stopSession(handle);
+    return {
+      run: finalize(db, runId, "killed", 130),
+      owner: "local",
+      alreadyFinished: false,
+      confirmed: true,
+    };
   }
-  return finalize(db, runId, "killed", 130);
+
+  // Never reached the engine: there is no session to abort, so close it here.
+  if (run.opencode_session_id === null) {
+    return {
+      run: finalize(db, runId, "killed", 130),
+      owner: "none",
+      alreadyFinished: false,
+      confirmed: true,
+    };
+  }
+
+  const graceMs = opts.graceMs ?? CANCEL_GRACE_MS;
+  const pollMs = opts.pollMs ?? 200;
+  const deadline = Date.now() + graceMs;
+  for (;;) {
+    const current = getRun(db, runId);
+    if (TERMINAL.has(current.status)) {
+      return { run: current, owner: "remote", alreadyFinished: false, confirmed: true };
+    }
+    if (Date.now() >= deadline) break;
+    await Bun.sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+  }
+
+  // The owner is gone or wedged. Closing the row is the honest record: the
+  // request is stamped, so a still-running owner will finalize into a no-op.
+  return {
+    run: finalize(db, runId, "killed", 130),
+    owner: "remote",
+    alreadyFinished: false,
+    confirmed: false,
+  };
+}
+
+/** Cancels a run and returns the closed row. */
+export async function kill(db: Db, runId: string): Promise<Run> {
+  return (await cancel(db, runId)).run;
 }

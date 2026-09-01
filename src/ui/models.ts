@@ -89,6 +89,20 @@ export interface RunDetailModel {
   showEvents: boolean;
 }
 
+/** The outcome of `runs cancel`: what was asked, who could act, where it landed. */
+export interface RunCancelModel {
+  run: RunRow;
+  endedAt: string | null;
+  exitCode: number | null;
+  cancelRequestedAt: string | null;
+  /** The run had already closed; this call changed nothing. */
+  alreadyFinished: boolean;
+  /** "local" — we owned the session; "remote" — another process did; "none" — it never reached the engine. */
+  owner: "local" | "remote" | "none";
+  /** False when the owning process never confirmed the stop within the grace. */
+  confirmed: boolean;
+}
+
 export interface MigrationRow {
   version: string;
   applied: boolean;

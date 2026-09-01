@@ -6,7 +6,7 @@ import { runDoctor } from "./commands/doctor.ts";
 import { runHome } from "./commands/home.ts";
 import { runInit } from "./commands/init.ts";
 import { runRun } from "./commands/run.ts";
-import { runRunsList, runRunsShow, runRunsTail } from "./commands/runs.ts";
+import { runRunsCancel, runRunsList, runRunsShow, runRunsTail } from "./commands/runs.ts";
 import { runSeed } from "./commands/seed.ts";
 import { runShell, shellIsAvailable } from "./commands/shell.ts";
 import { type CommandLike, dbExists, globalsFrom, makeContext } from "./context.ts";
@@ -87,7 +87,7 @@ withGlobals(
   run(() => runRun(ctx(cmd), prompt.join(" "), opts)),
 );
 
-const runs = program.command("runs").description("inspect recorded runs");
+const runs = program.command("runs").description("inspect and control recorded runs");
 
 withGlobals(
   runs
@@ -107,6 +107,13 @@ withGlobals(
 withGlobals(runs.command("tail <id>").description("follow a running run's events live")).action(
   (id, _opts, cmd: Command) => run(() => runRunsTail(ctx(cmd), id)),
 );
+
+withGlobals(
+  runs
+    .command("cancel <id>")
+    .description("stop an active run, wherever it is running")
+    .option("--wait <ms>", "how long to wait for the owning process to confirm (default 5000)"),
+).action((id, opts, cmd: Command) => run(() => runRunsCancel(ctx(cmd), id, opts)));
 
 const db = program.command("db").description("database maintenance (no destructive commands)");
 

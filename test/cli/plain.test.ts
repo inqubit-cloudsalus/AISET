@@ -4,8 +4,8 @@ import { listArtifacts } from "../../src/db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../../src/db/repositories/events.ts";
 import { usageTotals } from "../../src/db/repositories/usage.ts";
 import { toArtifactRow, toEventRow, toRunRow } from "../../src/ui/mappers.ts";
-import type { RunDetailModel, RunListModel } from "../../src/ui/models.ts";
-import { plainRunDetail, plainRunList } from "../../src/ui/plain.ts";
+import type { RunCancelModel, RunDetailModel, RunListModel } from "../../src/ui/models.ts";
+import { plainRunCancel, plainRunDetail, plainRunList } from "../../src/ui/plain.ts";
 import { makeTheme, toneForVerdict } from "../../src/ui/theme.ts";
 import { freshDb } from "../db/helpers.ts";
 
@@ -69,6 +69,35 @@ describe("plain renderers", () => {
     expect(text).toContain("runs/demo/spec.json");
     expect(text).toContain("tokens in   1250");
     expect(text).toContain("2.1s");
+  });
+
+  test("cancel says what happened to the engine, not just to the row", () => {
+    const { run } = seeded();
+    const base: RunCancelModel = {
+      run: toRunRow(run),
+      endedAt: run.ended_at,
+      exitCode: 130,
+      cancelRequestedAt: run.started_at,
+      alreadyFinished: false,
+      owner: "local",
+      confirmed: true,
+    };
+
+    const local = plainRunCancel(base, theme);
+    expect(local).toBe(plainRunCancel(base, theme));
+    expect(local).toContain(base.run.displayId);
+    expect(local).toContain("OpenCode session aborted");
+
+    expect(plainRunCancel({ ...base, alreadyFinished: true, owner: "none" }, theme)).toContain(
+      "already finished",
+    );
+    expect(plainRunCancel({ ...base, owner: "remote" }, theme)).toContain(
+      "the process running it stopped",
+    );
+    expect(plainRunCancel({ ...base, owner: "remote", confirmed: false }, theme)).toContain(
+      "no process confirmed the stop",
+    );
+    expect(plainRunCancel({ ...base, owner: "none" }, theme)).toContain("never reached the engine");
   });
 
   test("run detail hides the timeline unless --events was passed", () => {

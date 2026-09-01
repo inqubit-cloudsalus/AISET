@@ -7,7 +7,9 @@ import {
   createRun,
   findRun,
   getRun,
+  listActiveRuns,
   listRuns,
+  requestCancel,
   runDurationMs,
   updateRun,
 } from "../../src/db/repositories/runs.ts";
@@ -63,6 +65,36 @@ describe("runs repository", () => {
     expect(listRuns(db, { limit: 1 }).length).toBe(1);
     expect(listRuns(db, { status: "failed" }).length).toBe(2);
     expect(countByStatus(db)).toEqual({ failed: 2, pending: 1 });
+    db.close();
+  });
+
+  test("listActiveRuns returns only runs that have not closed", () => {
+    const db = freshDb();
+    const pending = createRun(db, { taskTitle: "waiting", engine: "mock" });
+    const running = createRun(db, { taskTitle: "in flight", engine: "mock" });
+    updateRun(db, running.id, { status: "running" });
+    const done = createRun(db, { taskTitle: "finished", engine: "mock" });
+    updateRun(db, done.id, { status: "succeeded" });
+
+    const active = listActiveRuns(db)
+      .map((r) => r.id)
+      .sort();
+    expect(active).toEqual([pending.id, running.id].sort());
+    db.close();
+  });
+
+  test("requestCancel stamps the request once and 404s on a missing run", () => {
+    const db = freshDb();
+    const run = createRun(db, { taskTitle: "to be stopped", engine: "mock" });
+    expect(run.cancel_requested_at).toBeNull();
+
+    const asked = requestCancel(db, run.id);
+    expect(asked.cancel_requested_at).not.toBeNull();
+    // A second request keeps the first stamp: when the stop was asked for is a
+    // fact about the run, not about how many times someone typed the command.
+    expect(requestCancel(db, run.id).cancel_requested_at).toBe(asked.cancel_requested_at);
+
+    expect(() => requestCancel(db, "nope")).toThrow(/not found/);
     db.close();
   });
 });

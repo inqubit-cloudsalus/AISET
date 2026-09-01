@@ -24,6 +24,19 @@ export const ARTIFACT_KINDS = ["spec", "patch", "test-report", "review-package",
 export const ENGINES = ["opencode", "mock"] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+/** Statuses a run can never leave. The single definition every caller shares. */
+export const TERMINAL_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>([
+  "succeeded",
+  "failed",
+  "timeout",
+  "killed",
+]);
+
+export function isTerminal(status: string): boolean {
+  return TERMINAL_STATUSES.has(status as RunStatus);
+}
+
 export type Verdict = (typeof VERDICTS)[number];
 export type EventType = (typeof EVENT_TYPES)[number];
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
@@ -57,6 +70,8 @@ export const RunSchema = z.object({
   parent_run_id: z.string().nullable(),
   /** Root OpenCode session this run drives; null for mock and pre-adapter runs. */
   opencode_session_id: z.string().nullable(),
+  /** When a stop was asked for; the owning pump polls this to abort the session. */
+  cancel_requested_at: z.string().nullable(),
   schema_version: z.string(),
   meta: jsonColumn,
 });
