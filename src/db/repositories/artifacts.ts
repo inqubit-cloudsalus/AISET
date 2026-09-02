@@ -41,3 +41,15 @@ export function listArtifacts(db: Db, runId: string): RunArtifact[] {
     .all(runId);
   return parseRows(RunArtifactSchema, "run_artifacts", rows);
 }
+
+/** Artifacts produced by a run and by every run launched under it. */
+export function listArtifactsWithChildren(db: Db, runId: string): RunArtifact[] {
+  const rows = db
+    .query(
+      `SELECT ${COLUMNS} FROM run_artifacts
+       WHERE run_id = ? OR run_id IN (SELECT id FROM runs WHERE parent_run_id = ?)
+       ORDER BY id ASC`,
+    )
+    .all(runId, runId);
+  return parseRows(RunArtifactSchema, "run_artifacts", rows);
+}

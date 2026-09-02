@@ -124,8 +124,10 @@ export function formatDuration(ms: number | null): string {
   if (ms < 1000) return `${ms}ms`;
   const s = ms / 1000;
   if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${Math.round(s % 60)}s`;
+  // Rounded to whole seconds first: rounding the remainder on its own turns
+  // 119.5s into "1m 60s", a duration that cannot exist.
+  const total = Math.round(s);
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
 /** ISO timestamp trimmed to `YYYY-MM-DD HH:MM:SS` UTC — stable across locales. */

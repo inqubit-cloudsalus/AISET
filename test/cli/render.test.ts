@@ -74,4 +74,15 @@ describe("theme", () => {
     expect(formatDuration(90_000)).toBe("1m 30s");
     expect(formatTimestamp("2026-09-01T06:22:17.123Z")).toBe("2026-09-01 06:22:17");
   });
+
+  test("a duration never rounds up into a sixtieth second", () => {
+    // Rounding the seconds apart from the minutes used to render "1m 60s".
+    expect(formatDuration(119_500)).toBe("2m 0s");
+    expect(formatDuration(119_856)).toBe("2m 0s");
+    expect(formatDuration(179_900)).toBe("3m 0s");
+    expect(formatDuration(119_400)).toBe("1m 59s");
+    for (let ms = 60_000; ms <= 600_000; ms += 97) {
+      expect(formatDuration(ms)).not.toContain("60s");
+    }
+  });
 });

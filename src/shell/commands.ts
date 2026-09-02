@@ -3,7 +3,7 @@ import { seedDemoRun } from "../cli/commands/seed.ts";
 import { readConfig } from "../core/config.ts";
 import { displayRunId, normalizeRunId } from "../core/ids.ts";
 import { isCurrent, migrationStatus } from "../db/migrate.ts";
-import { listArtifacts } from "../db/repositories/artifacts.ts";
+import { listArtifacts, listArtifactsWithChildren } from "../db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../db/repositories/events.ts";
 import {
   countByStatus,
@@ -15,7 +15,7 @@ import {
   runDurationMs,
 } from "../db/repositories/runs.ts";
 import { tableCounts } from "../db/repositories/stats.ts";
-import { usageTotals } from "../db/repositories/usage.ts";
+import { usageTotals, usageTotalsWithChildren } from "../db/repositories/usage.ts";
 import { RUN_STATUSES, type RunStatus } from "../db/types.ts";
 import { cancel, observe, start } from "../opencode/adapter.ts";
 import { type GroupTask, startGroup } from "../opencode/group.ts";
@@ -214,8 +214,8 @@ const runShow: SlashCommand = {
       children: listChildRuns(session.db, runId).map(toRunRow),
       events: listEvents(session.db, runId).map(toEventRow),
       eventCount: countEvents(session.db, runId),
-      artifacts: listArtifacts(session.db, runId).map(toArtifactRow),
-      usage: usageTotals(session.db, runId),
+      artifacts: listArtifactsWithChildren(session.db, runId).map(toArtifactRow),
+      usage: usageTotalsWithChildren(session.db, runId),
       // The shell has the room the one-shot command does not, so events are always shown.
       showEvents: true,
     };

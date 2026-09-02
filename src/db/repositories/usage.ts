@@ -59,3 +59,27 @@ export function usageTotals(db: Db, runId: string): UsageTotals {
     { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   );
 }
+
+/**
+ * Usage across a run and everything launched under it.
+ *
+ * A group's own row spends nothing — its agents do — so totalling one run in
+ * isolation reports $0.0000 for a team that cost real money.
+ */
+export function usageTotalsWithChildren(db: Db, runId: string): UsageTotals {
+  const rows = db
+    .query(
+      `SELECT ${COLUMNS} FROM run_usage
+       WHERE run_id = ? OR run_id IN (SELECT id FROM runs WHERE parent_run_id = ?)
+       ORDER BY id ASC`,
+    )
+    .all(runId, runId);
+  return parseRows(RunUsageSchema, "run_usage", rows).reduce<UsageTotals>(
+    (acc, u) => ({
+      inputTokens: acc.inputTokens + (u.input_tokens ?? 0),
+      outputTokens: acc.outputTokens + (u.output_tokens ?? 0),
+      costUsd: acc.costUsd + (u.cost_usd ?? 0),
+    }),
+    { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+  );
+}

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { SchemaDriftError } from "../../src/core/errors.ts";
-import { addArtifact, listArtifacts } from "../../src/db/repositories/artifacts.ts";
+import {
+  addArtifact,
+  listArtifacts,
+  listArtifactsWithChildren,
+} from "../../src/db/repositories/artifacts.ts";
 import { appendEvent, countEvents, listEvents } from "../../src/db/repositories/events.ts";
 import {
   countByStatus,
@@ -13,7 +17,12 @@ import {
   runDurationMs,
   updateRun,
 } from "../../src/db/repositories/runs.ts";
-import { listUsage, recordUsage, usageTotals } from "../../src/db/repositories/usage.ts";
+import {
+  listUsage,
+  recordUsage,
+  usageTotals,
+  usageTotalsWithChildren,
+} from "../../src/db/repositories/usage.ts";
 import { freshDb } from "./helpers.ts";
 
 describe("runs repository", () => {
@@ -186,6 +195,34 @@ describe("schema drift", () => {
     const run = createRun(db, { taskTitle: "a", engine: "mock" });
     db.query("UPDATE runs SET meta = '{not json' WHERE id = ?").run(run.id);
     expect(() => getRun(db, run.id)).toThrow(SchemaDriftError);
+    db.close();
+  });
+});
+
+describe("group totals", () => {
+  test("a group reports what its agents spent and produced", () => {
+    const db = freshDb();
+    const parent = createRun(db, { taskTitle: "2 agents", engine: "opencode" });
+    const a = createRun(db, { taskTitle: "build", engine: "opencode", parentRunId: parent.id });
+    const b = createRun(db, { taskTitle: "explore", engine: "opencode", parentRunId: parent.id });
+
+    recordUsage(db, { runId: a.id, inputTokens: 100, outputTokens: 10, costUsd: 0.07 });
+    recordUsage(db, { runId: b.id, inputTokens: 200, outputTokens: 20, costUsd: 0.08 });
+    addArtifact(db, { runId: a.id, kind: "patch", path: "src/notes-a.md" });
+
+    // The parent row itself spends nothing, which is why totalling it alone
+    // reported $0 for a team that cost real money.
+    expect(usageTotals(db, parent.id).costUsd).toBe(0);
+    expect(listArtifacts(db, parent.id)).toHaveLength(0);
+
+    const totals = usageTotalsWithChildren(db, parent.id);
+    expect(totals.inputTokens).toBe(300);
+    expect(totals.outputTokens).toBe(30);
+    expect(totals.costUsd).toBeCloseTo(0.15, 10);
+    expect(listArtifactsWithChildren(db, parent.id).map((x) => x.path)).toEqual(["src/notes-a.md"]);
+
+    // A run with no agents under it is unchanged by the roll-up.
+    expect(usageTotalsWithChildren(db, a.id).costUsd).toBeCloseTo(0.07, 10);
     db.close();
   });
 });

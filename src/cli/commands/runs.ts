@@ -1,10 +1,10 @@
 import { createElement } from "react";
 import { AisetError, NotFoundError } from "../../core/errors.ts";
 import { normalizeRunId } from "../../core/ids.ts";
-import { listArtifacts } from "../../db/repositories/artifacts.ts";
+import { listArtifactsWithChildren } from "../../db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../../db/repositories/events.ts";
 import { findRun, listChildRuns, listRuns, runDurationMs } from "../../db/repositories/runs.ts";
-import { usageTotals } from "../../db/repositories/usage.ts";
+import { usageTotalsWithChildren } from "../../db/repositories/usage.ts";
 import { isTerminal, RUN_STATUSES, type RunStatus } from "../../db/types.ts";
 import { type CancelResult, cancel } from "../../opencode/adapter.ts";
 import { toArtifactRow, toEventRow, toRunRow } from "../../ui/mappers.ts";
@@ -82,8 +82,8 @@ export async function runRunsShow(ctx: Context, id: string, opts: ShowOptions): 
     children: listChildRuns(db, runId).map(toRunRow),
     events: listEvents(db, runId).map(toEventRow),
     eventCount: countEvents(db, runId),
-    artifacts: listArtifacts(db, runId).map(toArtifactRow),
-    usage: usageTotals(db, runId),
+    artifacts: listArtifactsWithChildren(db, runId).map(toArtifactRow),
+    usage: usageTotalsWithChildren(db, runId),
     // JSON always carries the full timeline; the human views honour --events.
     showEvents: opts.events ?? false,
   };

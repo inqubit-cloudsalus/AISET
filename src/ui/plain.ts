@@ -165,7 +165,10 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
     lines.push("  (none)");
   }
 
-  lines.push("", `artifacts (${model.artifacts.length})`);
+  // A group's artifacts and spend are its agents'; saying so keeps the numbers
+  // from reading as the parent row's own.
+  const scope = model.children.length > 0 ? " — all agents" : "";
+  lines.push("", `artifacts (${model.artifacts.length})${scope}`);
   if (model.artifacts.length === 0) lines.push("  (none)");
   for (const a of model.artifacts) {
     const size = a.bytes === null ? "" : ` ${a.bytes}b`;
@@ -174,7 +177,7 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
 
   lines.push(
     "",
-    "usage",
+    `usage${scope}`,
     `  tokens in   ${model.usage.inputTokens}`,
     `  tokens out  ${model.usage.outputTokens}`,
     `  cost usd    ${model.usage.costUsd.toFixed(4)}`,
