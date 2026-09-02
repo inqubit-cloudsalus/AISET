@@ -61,6 +61,8 @@ export interface StartTask {
   model?: string | null;
   /** Directory OpenCode runs in. Defaults to the process cwd. */
   workdir?: string;
+  /** Chosen by the caller when the run's id must be known before it starts. */
+  runId?: string;
   /** Links a recovery re-run back to the run it replaces. */
   parentRunId?: string | null;
 }

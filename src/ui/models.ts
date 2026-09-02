@@ -82,6 +82,8 @@ export interface RunDetailModel {
   exitCode: number | null;
   workdir: string | null;
   parentRunId: string | null;
+  /** Runs launched under this one — the agents of a multi-agent group. */
+  children: RunRow[];
   events: EventRow[];
   eventCount: number;
   artifacts: ArtifactRow[];

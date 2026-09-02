@@ -5,7 +5,13 @@ import { log } from "../core/logger.ts";
 import type { Db } from "../db/client.ts";
 import { addArtifact, listArtifacts } from "../db/repositories/artifacts.ts";
 import { appendEvent, listEvents } from "../db/repositories/events.ts";
-import { createRun, getRun, requestCancel, updateRun } from "../db/repositories/runs.ts";
+import {
+  createRun,
+  getRun,
+  listChildRuns,
+  requestCancel,
+  updateRun,
+} from "../db/repositories/runs.ts";
 import { listUsage, recordUsage, usageTotals } from "../db/repositories/usage.ts";
 import {
   type Run,
@@ -17,7 +23,7 @@ import {
 } from "../db/types.ts";
 import { HttpOpenCodeApi, type OpenCodeApi } from "./client.ts";
 import { EventMapper } from "./mapper.ts";
-import { type OpenCodeServer, startServer } from "./server.ts";
+import { lease, type ServerLease } from "./pool.ts";
 import type { Mapped, StartTask } from "./types.ts";
 
 export interface AdapterOptions {
@@ -86,6 +92,7 @@ export async function start(
 ): Promise<RunHandle> {
   const workdir = resolve(task.workdir ?? process.cwd());
   const run = createRun(db, {
+    id: task.runId,
     taskId: task.taskId ?? null,
     taskTitle: title(task),
     engine: "opencode",
@@ -96,7 +103,7 @@ export async function start(
     meta: { prompt: task.prompt, agent: task.agent ?? null },
   });
 
-  let server: OpenCodeServer | null = null;
+  let server: ServerLease | null = null;
   let api: OpenCodeApi;
   let sessionId: string;
   try {
@@ -104,7 +111,12 @@ export async function start(
       api = opts.transport.api;
       sessionId = opts.transport.sessionId;
     } else {
-      server = await startServer({
+      // Leased, not spawned: runs launched together in the same directory share
+      // one `opencode serve`. Every pump reads the whole event stream and the
+      // mapper keeps only the sessions its own run owns. The cost of sharing is
+      // that a server-level error — one with no session id — is terminal for
+      // every run on it, which is the honest outcome: the engine is gone.
+      server = await lease({
         bin: opts.bin ?? "opencode",
         hostname: opts.hostname ?? "127.0.0.1",
         port: opts.port ?? 0,
@@ -122,7 +134,7 @@ export async function start(
       message: err instanceof Error ? err.message : String(err),
     });
     finalize(db, run.id, "failed", 1);
-    await server?.stop();
+    await server?.release();
     throw err;
   }
 
@@ -138,7 +150,7 @@ export async function start(
   const handle: LiveRun = { abort, api, sessionId, killed: false };
   live.set(run.id, handle);
 
-  const stop = opts.transport?.stop ?? (() => server?.stop() ?? Promise.resolve());
+  const stop = opts.transport?.stop ?? (() => server?.release() ?? Promise.resolve());
   const finished = pump(db, run.id, workdir, handle, opts).finally(async () => {
     live.delete(run.id);
     abort.abort();
@@ -225,7 +237,7 @@ async function pump(
 }
 
 /** 130 is the conventional "terminated by a signal" code, as `cancel` uses. */
-function exitCodeFor(status: RunStatus): number {
+export function exitCodeFor(status: RunStatus): number {
   if (status === "succeeded") return 0;
   return status === "killed" ? 130 : 1;
 }
@@ -396,6 +408,12 @@ export async function cancel(
     return { run, owner: "none", alreadyFinished: true, confirmed: true };
   }
 
+  // A group has no session of its own; cancelling it means cancelling the runs
+  // underneath it. Routing here rather than at each call site is what makes
+  // `aiset runs cancel r_<group>` and `/cancel r_<group>` stop the whole team.
+  const children = listChildRuns(db, runId);
+  if (children.length > 0) return cancelChildren(db, run, children, opts);
+
   requestCancel(db, runId);
   const handle = live.get(runId);
   if (handle) {
@@ -437,6 +455,36 @@ export async function cancel(
     owner: "remote",
     alreadyFinished: false,
     confirmed: false,
+  };
+}
+
+/**
+ * Cancels every run in a group, then closes the group itself.
+ *
+ * The request is stamped on the parent first, so a group poller in another
+ * process stops fanning out while this one does the work. Each child goes
+ * through `cancel` unchanged, so a child owned elsewhere is still stopped by
+ * whoever owns it. The group is `confirmed` only when every child was.
+ */
+async function cancelChildren(
+  db: Db,
+  parent: Run,
+  children: Run[],
+  opts: CancelOptions,
+): Promise<CancelResult> {
+  requestCancel(db, parent.id);
+  const results = await Promise.all(children.map((child) => cancel(db, child.id, opts)));
+  const confirmed = results.every((r) => r.confirmed);
+  const owner: CancelOwner = results.some((r) => r.owner === "local")
+    ? "local"
+    : results.some((r) => r.owner === "remote")
+      ? "remote"
+      : "none";
+  return {
+    run: finalize(db, parent.id, "killed", 130),
+    owner,
+    alreadyFinished: false,
+    confirmed,
   };
 }
 

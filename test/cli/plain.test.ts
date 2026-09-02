@@ -24,6 +24,7 @@ function seeded() {
     exitCode: run.exit_code,
     workdir: run.workdir,
     parentRunId: run.parent_run_id,
+    children: [],
     events: listEvents(db, run.id).map(toEventRow),
     eventCount: countEvents(db, run.id),
     artifacts: listArtifacts(db, run.id).map(toArtifactRow),

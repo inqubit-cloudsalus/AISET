@@ -89,6 +89,25 @@ export function listActiveRuns(db: Db, limit = 20): Run[] {
   return parseRows(RunSchema, "runs", rows);
 }
 
+/**
+ * The runs launched under one parent, oldest first.
+ *
+ * Order is launch order, not recency: a group reads as the team it is, in the
+ * order its agents were handed their tasks.
+ */
+export function listChildRuns(db: Db, parentRunId: string): Run[] {
+  const rows = db
+    .query(`SELECT ${COLUMNS} FROM runs WHERE parent_run_id = ? ORDER BY started_at ASC, id ASC`)
+    .all(parentRunId);
+  return parseRows(RunSchema, "runs", rows);
+}
+
+/** True when this run has runs of its own underneath it. */
+export function isGroup(db: Db, runId: string): boolean {
+  const row = db.query("SELECT 1 AS present FROM runs WHERE parent_run_id = ? LIMIT 1").get(runId);
+  return row !== null;
+}
+
 export interface UpdateRunInput {
   status?: RunStatus;
   verdict?: Verdict | null;

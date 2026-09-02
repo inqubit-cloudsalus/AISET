@@ -145,6 +145,17 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
   ];
   if (model.parentRunId) lines.push(`parent run  r_${model.parentRunId}`);
 
+  // A group's whole point is the team under it, so it is shown before the
+  // group's own events — which are only the bookkeeping ones.
+  if (model.children.length > 0) {
+    lines.push("", `agents (${model.children.length})`);
+    for (const c of model.children) {
+      lines.push(
+        `  ${symbolForTone(theme, c.tone)} ${c.displayId} ${c.status.padEnd(10)} ${formatDuration(c.durationMs).padStart(8)}  ${c.taskTitle}`,
+      );
+    }
+  }
+
   lines.push("", `events (${model.eventCount})`);
   if (model.showEvents && model.events.length > 0) {
     for (const e of model.events) lines.push(plainEventLine(e));

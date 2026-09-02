@@ -109,6 +109,7 @@ try {
   const show = await aiset(workdir, "runs", "show", seeded.displayId, "--json");
   assert(show.code === 0, "runs show exits 0");
   const detail = json<{
+    children: unknown[];
     events: unknown[];
     artifacts: unknown[];
     usage: { inputTokens: number };
@@ -118,6 +119,9 @@ try {
   assert(detail.artifacts.length === 2, "runs show returns the artifacts");
   assert(detail.usage.inputTokens > 0, "runs show returns usage");
   assert(detail.verdict === "GREEN", "runs show returns the verdict");
+  // A run with no agents under it is a group of none, not a missing field.
+  assert(Array.isArray(detail.children), "runs show reports the runs launched under this one");
+  assert(detail.children.length === 0, "a single run has no agents under it");
 
   const missing = await aiset(workdir, "runs", "show", "r_DOESNOTEXIST");
   assert(missing.code === 1, "runs show on an unknown id exits 1");

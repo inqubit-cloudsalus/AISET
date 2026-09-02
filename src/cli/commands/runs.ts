@@ -3,7 +3,7 @@ import { AisetError, NotFoundError } from "../../core/errors.ts";
 import { normalizeRunId } from "../../core/ids.ts";
 import { listArtifacts } from "../../db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../../db/repositories/events.ts";
-import { findRun, listRuns, runDurationMs } from "../../db/repositories/runs.ts";
+import { findRun, listChildRuns, listRuns, runDurationMs } from "../../db/repositories/runs.ts";
 import { usageTotals } from "../../db/repositories/usage.ts";
 import { isTerminal, RUN_STATUSES, type RunStatus } from "../../db/types.ts";
 import { type CancelResult, cancel } from "../../opencode/adapter.ts";
@@ -79,6 +79,7 @@ export async function runRunsShow(ctx: Context, id: string, opts: ShowOptions): 
     exitCode: run.exit_code,
     workdir: run.workdir,
     parentRunId: run.parent_run_id,
+    children: listChildRuns(db, runId).map(toRunRow),
     events: listEvents(db, runId).map(toEventRow),
     eventCount: countEvents(db, runId),
     artifacts: listArtifacts(db, runId).map(toArtifactRow),

@@ -3,7 +3,7 @@ import { seedDemoRun } from "../../src/cli/commands/seed.ts";
 import type { Context } from "../../src/cli/context.ts";
 import { displayRunId } from "../../src/core/ids.ts";
 import { resolvePaths } from "../../src/core/paths.ts";
-import { COMMANDS, dispatch, findCommand } from "../../src/shell/commands.ts";
+import { COMMANDS, dispatch, findCommand, parseTasks } from "../../src/shell/commands.ts";
 import type { Session, ShellBlock } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
 import { freshDb } from "../db/helpers.ts";
@@ -209,6 +209,109 @@ describe("progress channel", () => {
     expect(emitted.length).toBeGreaterThan(0);
     expect(emitted[0]!.text).toContain("starting OpenCode");
     expect(result.blocks[0]!.kind).toBe("error");
+    session.db.close();
+  });
+});
+
+describe("parseTasks", () => {
+  test("each --agent opens a task and the words after it are its prompt", () => {
+    const parsed = parseTasks(["--agent", "build", "add the parser", "--agent", "review", "audit"]);
+    expect(parsed).toEqual({
+      shared: new Map(),
+      tasks: [
+        { agent: "build", prompt: "add the parser" },
+        { agent: "review", prompt: "audit" },
+      ],
+    });
+  });
+
+  test("flags before the first agent belong to the whole team", () => {
+    const parsed = parseTasks(["--model", "opencode/big-pickle", "--agent", "build", "go"]);
+    expect(typeof parsed).not.toBe("string");
+    if (typeof parsed === "string") return;
+    expect(parsed.shared.get("model")).toBe("opencode/big-pickle");
+    expect(parsed.tasks).toHaveLength(1);
+  });
+
+  test("--wait is a bare flag, not a prompt eater", () => {
+    const parsed = parseTasks(["--wait", "--agent", "build", "go"]);
+    if (typeof parsed === "string") throw new Error(parsed);
+    expect(parsed.shared.get("wait")).toBe("true");
+    expect(parsed.tasks[0]!.prompt).toBe("go");
+  });
+
+  test("says what is missing rather than launching something empty", () => {
+    expect(parseTasks([])).toContain("usage:");
+    expect(parseTasks(["--agent", "build"])).toContain("no prompt");
+    expect(parseTasks(["a prompt", "--agent", "build", "go"])).toContain("has no agent");
+    expect(parseTasks(["--nonsense", "x", "--agent", "b", "go"])).toContain("unknown flag");
+  });
+});
+
+describe("/multi-launch", () => {
+  test("refuses a launch with no agents before touching the engine", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/multi-launch");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("--agent");
+    session.db.close();
+  });
+
+  test("an agent with no prompt is named in the error", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/multi-launch --agent build");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("build");
+    session.db.close();
+  });
+
+  test("a quoted prompt survives dispatch as one argument", async () => {
+    const session = makeSession();
+    // --timeout is validated before anything is started, so this exercises the
+    // whole parse path without reaching OpenCode.
+    const { blocks } = await dispatch(
+      session,
+      '/multi-launch --timeout nope --agent build "add the parser" --agent review "audit src/db"',
+    );
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("--timeout must be a positive number");
+    session.db.close();
+  });
+});
+
+describe("/cancel", () => {
+  test("needs an id", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/cancel");
+    expect(blocks[0]!.text).toContain("usage: /cancel");
+    session.db.close();
+  });
+
+  test("an unknown id is an error, not a silent no-op", async () => {
+    const session = makeSession();
+    const { blocks } = await dispatch(session, "/cancel r_nope");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("no run found");
+    session.db.close();
+  });
+
+  test("a run that already finished reports that nothing changed", async () => {
+    const session = makeSession();
+    const run = seedDemoRun(session.db);
+    const { blocks } = await dispatch(session, `/cancel ${displayRunId(run.id)}`);
+    expect(blocks[0]!.text).toContain("already finished");
+    expect(hasAnsi(blocks[0]!.text)).toBe(false);
+    session.db.close();
+  });
+});
+
+describe("/runs --active", () => {
+  test("lists only what is still working", async () => {
+    const session = makeSession();
+    seedDemoRun(session.db);
+    const { blocks } = await dispatch(session, "/runs --active");
+    expect(blocks[0]!.kind).toBe("output");
+    expect(hasAnsi(blocks[0]!.text)).toBe(false);
     session.db.close();
   });
 });
