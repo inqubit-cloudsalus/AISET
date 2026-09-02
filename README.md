@@ -55,9 +55,32 @@ bun run aiset           # the home view
 Global flags: `--json`, `--no-color`, `--db <path>`, `--version`, `--help`.
 
 **Every command has a plain-text path.** With `--json`, a non-TTY (a pipe), or `NO_COLOR`
-set, output is deterministic text or JSON and the Ink TUI is never mounted — which is what
-makes the CLI both pipeable and testable. Nothing is rendered that the database does not
-contain: there are no synthetic progress bars.
+set, output is deterministic text or JSON and the interactive TUI is never mounted — which
+is what makes the CLI both pipeable and testable. Nothing is rendered that the database does
+not contain: there are no synthetic progress bars.
+
+### Interactive shell
+
+Run `bun run aiset shell` (or `bun run dev`) for the full-screen OpenTUI workspace. It uses
+the terminal's alternate screen and native mouse reporting, so the command transcript is a
+real scrollable region rather than a manually sliced text buffer.
+
+On terminals at least 100 columns wide and 30 rows tall, the workspace opens with the full
+shadowed AISET wordmark and engineering-team emblem. Smaller terminals automatically use the
+compact brand header so the artwork never takes space away from essential controls.
+
+- Scroll with the mouse wheel or trackpad; use `Page Up` / `Page Down` for page movement and
+  `Ctrl+Home` / `Ctrl+End` to jump to either edge. New output follows automatically until you
+  scroll back.
+- Drag over any transcript text to select it. Press `Ctrl+C` to copy the active selection, or
+  simply release the mouse after selecting; `Esc` clears the selection.
+- Use `Alt+Up` / `Alt+Down` to move the active transcript row, and click a row or any action in
+  the right rail to activate it.
+- `Up` / `Down` navigate command history, `Tab` completes shell commands, `Ctrl+L` clears the
+  transcript, and `Ctrl+D` exits.
+
+The layout adapts to narrow and short terminals by reducing secondary status information and
+collapsing the action rail while keeping the transcript and prompt usable.
 
 There is deliberately **no `db reset`** and no command that deletes anything under `runs/`
 or `evals/baselines/` (charter §5). Provider API keys are read from the environment only and

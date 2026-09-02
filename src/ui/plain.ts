@@ -248,9 +248,6 @@ export function plainDbStatus(model: DbStatusModel, theme: Theme): string {
   return lines.join("\n");
 }
 
-// The shell's header lives in `banner.ts`: it is a fixed region above the
-// viewport rather than a rendered block, so `/clear` cannot take it away.
-
 export function plainInit(model: InitModel, theme: Theme): string {
   const line = (created: boolean, what: string) =>
     `${created ? theme.symbols.ok : theme.symbols.bullet} ${created ? "created" : "already existed"}  ${what}`;

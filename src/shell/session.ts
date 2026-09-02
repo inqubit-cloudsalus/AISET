@@ -10,7 +10,7 @@ import type { Session } from "./types.ts";
 /**
  * Opens the session's single database handle. `requireDb` is used deliberately:
  * a missing database or a schema behind this binary must fail loudly with its
- * hint before Ink is ever mounted, not inside a half-drawn TUI.
+ * hint before the interactive renderer is mounted, not inside a half-drawn TUI.
  */
 export function openSession(ctx: Context): Session {
   return {

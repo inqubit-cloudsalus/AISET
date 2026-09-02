@@ -1,219 +1,693 @@
-import { Box, Text, useApp, useInput, useStdout, useWindowSize } from "ink";
+/** @jsxImportSource @opentui/react */
+
+import {
+  type InputRenderable,
+  MouseButton,
+  type MouseEvent,
+  type ScrollBoxRenderable,
+  TextAttributes,
+} from "@opentui/core";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orphanNotice } from "../../opencode/recover.ts";
 import { dispatch } from "../../shell/commands.ts";
+import { promptCompletions } from "../../shell/prompt-state.ts";
 import { shellHeader } from "../../shell/session.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
-import { headerRows, rowText, type Shade } from "../banner.ts";
-import { useSpinnerFrame } from "../components/index.tsx";
-import { Prompt } from "../components/Prompt.tsx";
-import { MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_LINES, type WheelDirection } from "../mouse.ts";
-import { colorForTone, type Theme } from "../theme.ts";
-import {
-  clampOffset,
-  maxOffset,
-  scrollStatus,
-  toViewportLines,
-  type ViewportLine,
-  viewportHeight,
-  visibleLines,
-} from "../viewport.ts";
+import { copyText } from "../clipboard.ts";
+import { colors, formatTimestamp } from "../theme.ts";
 
-function tint(theme: Theme, color: string): string | undefined {
-  return theme.useColor ? color : undefined;
-}
-
-/**
- * Depth in the logo: lit faces take the accent, the drop shadow and the back
- * rank of the team take chrome grey and are dimmed on top of that.
- */
-function shadeColor(theme: Theme, shade: Shade): string {
-  return shade === "lit" ? theme.colors.accent : theme.colors.chrome;
-}
-
-function colorFor(theme: Theme, kind: ViewportLine["kind"]): string | undefined {
-  if (kind === "error") return tint(theme, colorForTone("fail"));
-  if (kind === "input") return tint(theme, theme.colors.accent);
-  return undefined;
-}
-
-/**
- * The AISET shell. The header is fixed above a bordered viewport sized to the
- * terminal: output scrolls inside the box, and `/clear` empties the box without
- * touching the wordmark or the connection line.
- */
 interface ShellViewProps {
   session: Session;
-  /** Subscribes to wheel notches; returns an unsubscribe. Supplied by runShell. */
-  onWheel: (listener: (direction: WheelDirection) => void) => () => void;
 }
 
-export function ShellView({ session, onWheel }: ShellViewProps) {
+interface ActionProps {
+  label: string;
+  hint: string;
+  onActivate: () => void;
+}
+
+const WORDMARK = [
+  " █████╗ ██╗███████╗███████╗████████╗",
+  "██╔══██╗██║██╔════╝██╔════╝╚══██╔══╝",
+  "███████║██║███████╗█████╗     ██║   ",
+  "██╔══██║██║╚════██║██╔══╝     ██║   ",
+  "██║  ██║██║███████║███████╗   ██║   ",
+  "╚═╝  ╚═╝╚═╝╚══════╝╚══════╝   ╚═╝   ",
+] as const;
+
+const WORDMARK_SHADOW = " ▀▀▀▀▀  ▀▀ ▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀   ▀▀▀▀   ";
+
+const TEAM_MARK = [
+  "    ▄███▄       ▄███▄       ▄███▄    ",
+  "  ╭███████╮   ╭███████╮   ╭███████╮  ",
+  "  ├───────┤   ├───────┤   ├───────┤  ",
+  "  │ •   • │   │ •   • │   │ •   • │  ",
+  "  ╰───┬───╯   ╰───┬───╯   ╰───┬───╯  ",
+] as const;
+
+function BrandLockup() {
+  return (
+    <box
+      style={{
+        height: 10,
+        flexShrink: 0,
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 3,
+        border: ["bottom"],
+        borderColor: colors.chrome,
+        backgroundColor: colors.surface,
+      }}
+    >
+      <box style={{ width: 44, flexDirection: "column" }}>
+        {WORDMARK.map((line, index) => (
+          <box key={line} style={{ height: 1, flexDirection: "row" }}>
+            <text selectable={false} style={{ fg: colors.accent, attributes: TextAttributes.BOLD }}>
+              {line}
+            </text>
+            <text selectable={false} style={{ fg: colors.accentSoft }}>
+              {index === 0 ? " " : "▐"}
+            </text>
+          </box>
+        ))}
+        <text selectable={false} style={{ fg: colors.accentSoft }}>
+          {WORDMARK_SHADOW}
+        </text>
+        <text selectable={false} style={{ fg: colors.muted }}>
+          <span fg={colors.accent}>◆</span> AI SOFTWARE ENGINEERING TEAM
+        </text>
+      </box>
+
+      <box style={{ width: 42, flexDirection: "column", alignItems: "center" }}>
+        {TEAM_MARK.map((line, index) => (
+          <text
+            key={line}
+            selectable={false}
+            style={{
+              fg: index < 2 ? colors.accent : colors.text,
+              attributes: index < 2 ? TextAttributes.BOLD : undefined,
+            }}
+          >
+            {line}
+          </text>
+        ))}
+        <text selectable={false} style={{ fg: colors.chrome }}>
+          ──────── ENGINEERING CELL ────────
+        </text>
+        <text selectable={false}>
+          <span fg={colors.accent} attributes={TextAttributes.BOLD}>
+            DESIGN
+          </span>
+          <span fg={colors.muted}> · </span>
+          <span fg={colors.ok} attributes={TextAttributes.BOLD}>
+            BUILD
+          </span>
+          <span fg={colors.muted}> · </span>
+          <span fg={colors.warn} attributes={TextAttributes.BOLD}>
+            REVIEW
+          </span>
+          <span fg={colors.muted}> · </span>
+          <span fg={colors.textStrong} attributes={TextAttributes.BOLD}>
+            SHIP
+          </span>
+        </text>
+      </box>
+    </box>
+  );
+}
+
+function Action({ label, hint, onActivate }: ActionProps) {
+  const renderer = useRenderer();
+  const [hovered, setHovered] = useState(false);
+  const activate = (event: MouseEvent) => {
+    if (renderer.getSelection()?.getSelectedText()) return;
+    if (event.button !== MouseButton.LEFT) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onActivate();
+  };
+  return (
+    // OpenTUI boxes are terminal hit-test targets rather than DOM elements;
+    // the same actions are available from the keyboard shortcuts in `hint`.
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithMouseEvents: terminal renderable
+    <box
+      onMouseOver={() => {
+        setHovered(true);
+        renderer.setMousePointer("pointer");
+      }}
+      onMouseOut={() => {
+        setHovered(false);
+        renderer.setMousePointer("default");
+      }}
+      onMouseUp={activate}
+      style={{
+        flexDirection: "row",
+        paddingLeft: 1,
+        paddingRight: 1,
+        backgroundColor: hovered ? colors.surfaceSelected : colors.surfaceRaised,
+      }}
+    >
+      <text selectable={false} style={{ fg: hovered ? colors.textStrong : colors.text }}>
+        {label}
+      </text>
+      <text selectable={false} style={{ fg: colors.muted }}>
+        {` ${hint}`}
+      </text>
+    </box>
+  );
+}
+
+function Block({
+  block,
+  index,
+  selected,
+  onSelect,
+}: {
+  block: ShellBlock;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const renderer = useRenderer();
+  const [hovered, setHovered] = useState(false);
+  const input = block.kind === "input";
+  const error = block.kind === "error";
+  const marker = input ? "›" : error ? "!" : "│";
+  const markerColor = input ? colors.accent : error ? colors.fail : colors.chrome;
+  return (
+    // Keyboard users select transcript entries with option+up/down.
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithMouseEvents: terminal renderable
+    <box
+      id={`transcript-${index}`}
+      onMouseOver={() => setHovered(true)}
+      onMouseOut={() => setHovered(false)}
+      onMouseUp={(event) => {
+        if (renderer.getSelection()?.getSelectedText()) return;
+        if (event.button !== MouseButton.LEFT) return;
+        onSelect();
+      }}
+      style={{
+        width: "100%",
+        flexDirection: "row",
+        paddingLeft: 1,
+        paddingRight: 1,
+        paddingTop: input ? 1 : 0,
+        paddingBottom: input ? 1 : 0,
+        backgroundColor: selected
+          ? colors.surfaceSelected
+          : hovered
+            ? colors.surfaceRaised
+            : colors.background,
+      }}
+    >
+      <text
+        selectable={false}
+        style={{ width: 2, fg: markerColor, attributes: TextAttributes.BOLD }}
+      >
+        {marker}
+      </text>
+      <text
+        selectable
+        style={{
+          flexGrow: 1,
+          flexShrink: 1,
+          fg: error ? colors.fail : input ? colors.accent : colors.text,
+          selectionBg: colors.selection,
+          selectionFg: colors.selectionText,
+          wrapMode: "word",
+        }}
+      >
+        {block.text}
+      </text>
+    </box>
+  );
+}
+
+function setInputValue(input: InputRenderable | null, value: string) {
+  if (!input) return;
+  input.value = value;
+  input.cursorOffset = value.length;
+}
+
+export function ShellView({ session }: ShellViewProps) {
+  const renderer = useRenderer();
+  const dimensions = useTerminalDimensions();
+  const inputRef = useRef<InputRenderable | null>(null);
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const pending = useRef(0);
+  const history = useRef<string[]>([]);
+  const historyIndex = useRef<number | null>(null);
+  const draft = useRef("");
+  const lastInterrupt = useRef(0);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = session;
-  const { exit } = useApp();
-  const { columns, rows } = useWindowSize();
-  const { stdout } = useStdout();
 
   const [blocks, setBlocks] = useState<ShellBlock[]>(() => {
     const opening: ShellBlock[] = [
       {
         kind: "output",
-        text: `${theme.symbols.cursor} /help for commands ${theme.symbols.bullet} /db-status for the database ${theme.symbols.bullet} /exit to quit`,
+        text: "Welcome to AISET. Launch a task, inspect a run, or type /help to explore commands.",
       },
     ];
-    // Runs a dead process left behind are said once, on the way in. Reported,
-    // not acted on: recovery adopts sessions and closes runs, which is not
-    // something to do to a user who only opened a terminal.
     const orphans = orphanNotice(session.db);
-    if (orphans) {
-      opening.push({ kind: "output", text: `${theme.symbols.warn} ${orphans} — /recover` });
-    }
+    if (orphans)
+      opening.push({ kind: "error", text: `${orphans} — use /recover to inspect them.` });
     return opening;
   });
   const [busy, setBusy] = useState(false);
-  /** null follows the tail; a number pins the first visible line. */
-  const [offset, setOffset] = useState<number | null>(null);
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const pending = useRef(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [value, setValue] = useState("");
+  const [selected, setSelected] = useState<number | null>(null);
+  const [following, setFollowing] = useState(true);
+  const [notice, setNotice] = useState("drag to select · release to copy");
+  const [header, setHeader] = useState(() => shellHeader(session));
 
-  const spinner = useSpinnerFrame(theme);
+  const narrow = dimensions.width < 86;
+  const compact = dimensions.height < 22;
+  const showBrand = dimensions.width >= 100 && dimensions.height >= 30;
+  const completions = useMemo(
+    () =>
+      promptCompletions({
+        buffer: value,
+        cursor: value.length,
+        history: [],
+        historyIndex: null,
+        draft: "",
+      }),
+    [value],
+  );
 
-  // Read once: the header describes the handle this session opened, and the
-  // counts on it are a connection fact, not a live view of the data.
-  const header = useMemo(() => shellHeader(session), [session]);
-  const banner = headerRows(header, theme, { columns, rows });
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice("drag to select · release to copy"), 2200);
+  }, []);
 
-  const height = viewportHeight(rows, banner.length);
-  // Two border columns and one column of padding on each side.
-  const width = Math.max(20, columns - 4);
-  const lines = useMemo(() => toViewportLines(blocks, width), [blocks, width]);
-  const shown = visibleLines(lines, offset, height);
-  const status = scrollStatus(lines.length, offset, height);
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
 
-  const parts = [
-    busy ? `${spinner} working` : null,
-    status.total === 0 ? "empty" : `lines ${status.first}–${status.last} of ${status.total}`,
-    status.following ? null : `${theme.symbols.warn} scrolled back`,
-    // The key hints are the first thing to go when the terminal is narrow.
-    columns >= 72 ? "wheel or pgup/pgdn scrolls" : null,
-    columns >= 72 ? "/clear empties" : null,
-  ].filter((part): part is string => part !== null);
-  const statusLine = parts.join(`  ${theme.symbols.bullet}  `);
+  useEffect(() => {
+    if (!busy) return;
+    const headerTimer = setInterval(() => setHeader(shellHeader(session)), 1000);
+    const spinnerTimer = setInterval(
+      () => setSpinnerFrame((frame) => (frame + 1) % theme.symbols.spinner.length),
+      90,
+    );
+    return () => {
+      clearInterval(headerTimer);
+      clearInterval(spinnerTimer);
+    };
+  }, [busy, session, theme.symbols.spinner.length]);
+
+  const updateFollowing = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const max = Math.max(0, scroll.scrollHeight - scroll.viewport.height);
+    setFollowing(scroll.scrollTop >= max - 1);
+  }, []);
+
+  const toBottom = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    scroll.scrollTo(scroll.scrollHeight);
+    setFollowing(true);
+  }, []);
 
   const append = useCallback((next: ShellBlock[]) => {
     if (next.length === 0) return;
-    setBlocks((prev) => [...prev, ...next]);
-    // New output pulls the viewport back to the tail, so nothing is missed.
-    setOffset(null);
+    setBlocks((current) => [...current, ...next]);
   }, []);
 
-  const onSubmit = useCallback(
-    (line: string) => {
-      if (line.trim() === "") return;
-      append([{ kind: "input", text: `${theme.symbols.cursor} ${line.trim()}` }]);
+  const submit = useCallback(
+    (raw: string) => {
+      const line = raw.trim();
+      if (!line) return;
+      if (history.current.at(-1) !== line) history.current.push(line);
+      historyIndex.current = null;
+      draft.current = "";
+      setValue("");
+      setInputValue(inputRef.current, "");
+      append([{ kind: "input", text: line }]);
       setBusy(true);
+      setFollowing(true);
+      setTimeout(toBottom, 0);
       pending.current += 1;
-      // Chained rather than fired in parallel, so a line submitted while another
-      // command is still running cannot interleave its output.
       queue.current = queue.current
-        // A long command publishes blocks as it goes, so the transcript grows
-        // while it runs instead of staying empty until it returns.
         .then(() => dispatch(session, line, (block) => append([block])))
         .then((result) => {
-          // Clears the transcript only; the header above the viewport stays.
           if (result.effect === "clear") {
             setBlocks([]);
-            setOffset(null);
+            setSelected(null);
+          } else {
+            append(result.blocks);
           }
-          append(result.blocks);
-          if (result.effect === "exit") exit();
+          if (result.effect === "exit") renderer.destroy();
+          setHeader(shellHeader(session));
         })
         .finally(() => {
           pending.current -= 1;
           if (pending.current === 0) setBusy(false);
         });
     },
-    [append, exit, session, theme],
+    [append, renderer, session, toBottom],
   );
 
-  const scrollBy = useCallback(
-    (delta: number) => {
-      setOffset((current) => {
-        const bottom = maxOffset(lines.length, height);
-        const clamped = clampOffset((current ?? bottom) + delta, lines.length, height);
-        // Landing back at the bottom resumes following, so later output appears.
-        return clamped >= bottom ? null : clamped;
-      });
+  const copySelection = useCallback(async () => {
+    const text = renderer.getSelection()?.getSelectedText() ?? "";
+    if (!text) return false;
+    const copied = await copyText(renderer, text);
+    showNotice(copied ? "copied selection" : "clipboard unavailable");
+    if (copied) queueMicrotask(() => renderer.clearSelection());
+    return true;
+  }, [renderer, showNotice]);
+
+  const moveHistory = useCallback(
+    (direction: -1 | 1) => {
+      if (history.current.length === 0) return;
+      if (historyIndex.current === null) {
+        if (direction > 0) return;
+        draft.current = value;
+        historyIndex.current = history.current.length - 1;
+      } else {
+        const nextIndex = historyIndex.current + direction;
+        if (nextIndex < 0) return;
+        if (nextIndex >= history.current.length) {
+          historyIndex.current = null;
+          setValue(draft.current);
+          setInputValue(inputRef.current, draft.current);
+          return;
+        }
+        historyIndex.current = nextIndex;
+      }
+      const nextValue = history.current[historyIndex.current] ?? "";
+      setValue(nextValue);
+      setInputValue(inputRef.current, nextValue);
     },
-    [height, lines.length],
+    [value],
   );
 
-  // Scrolling is handled here rather than in the prompt: these keys move the
-  // viewport, never the input line.
-  useInput((_input, key) => {
-    if (!key.pageUp && !key.pageDown) return;
-    const page = Math.max(1, height - 1);
-    scrollBy(key.pageUp ? -page : page);
+  const complete = useCallback(() => {
+    if (completions.length === 0) return;
+    let next = completions[0] ?? value;
+    if (completions.length > 1) {
+      while (next && !completions.every((candidate) => candidate.startsWith(next))) {
+        next = next.slice(0, -1);
+      }
+    } else {
+      next += " ";
+    }
+    setValue(next);
+    setInputValue(inputRef.current, next);
+  }, [completions, value]);
+
+  useKeyboard((key) => {
+    const selection = renderer.getSelection()?.getSelectedText();
+    if (key.ctrl && key.name === "c") {
+      key.preventDefault();
+      key.stopPropagation();
+      if (selection) {
+        void copySelection();
+      } else if (value.length > 0) {
+        setValue("");
+        setInputValue(inputRef.current, "");
+        showNotice("input cleared");
+      } else if (Date.now() - lastInterrupt.current < 1200) {
+        renderer.destroy();
+      } else {
+        lastInterrupt.current = Date.now();
+        showNotice("press ctrl+c again to quit");
+      }
+      return;
+    }
+    if (key.name === "escape" && selection) {
+      renderer.clearSelection();
+      key.preventDefault();
+      return;
+    }
+    if (key.name === "pageup" || key.name === "pagedown") {
+      const scroll = scrollRef.current;
+      if (!scroll) return;
+      scroll.scrollBy((key.name === "pageup" ? -1 : 1) * Math.max(1, scroll.viewport.height - 2));
+      setTimeout(updateFollowing, 0);
+      key.preventDefault();
+      return;
+    }
+    if (key.ctrl && key.name === "home") {
+      scrollRef.current?.scrollTo(0);
+      setFollowing(false);
+      key.preventDefault();
+      return;
+    }
+    if (key.ctrl && key.name === "end") {
+      toBottom();
+      key.preventDefault();
+      return;
+    }
+    if (key.option && (key.name === "up" || key.name === "down")) {
+      const delta = key.name === "up" ? -1 : 1;
+      const next = Math.max(0, Math.min(blocks.length - 1, (selected ?? blocks.length) + delta));
+      setSelected(next);
+      setTimeout(() => scrollRef.current?.scrollChildIntoView(`transcript-${next}`), 0);
+      key.preventDefault();
+      return;
+    }
+    if (key.ctrl && key.name === "l") {
+      setBlocks([]);
+      setSelected(null);
+      key.preventDefault();
+      return;
+    }
+    if (key.name === "tab") {
+      complete();
+      key.preventDefault();
+      return;
+    }
+    if (key.name === "up") {
+      moveHistory(-1);
+      key.preventDefault();
+      return;
+    }
+    if (key.name === "down") {
+      moveHistory(1);
+      key.preventDefault();
+      return;
+    }
+    if (key.ctrl && key.name === "d" && value.length === 0) {
+      renderer.destroy();
+      key.preventDefault();
+    }
   });
 
-  // Terminals report the wheel only when asked to. Tracking is turned off again
-  // on unmount so the terminal gets its mouse back — see also runShell, which
-  // repeats the reset in case the shell exits without unmounting cleanly.
-  useEffect(() => {
-    stdout.write(MOUSE_ENABLE);
-    return () => {
-      stdout.write(MOUSE_DISABLE);
-    };
-  }, [stdout]);
-
-  // Notches arrive from the stdin filter in runShell, which removes them before
-  // Ink's key parser can shred them into fragments.
-  useEffect(
-    () => onWheel((direction) => scrollBy(direction === "up" ? -WHEEL_LINES : WHEEL_LINES)),
-    [onWheel, scrollBy],
-  );
-
   return (
-    <Box flexDirection="column">
-      {banner.map((row) => (
-        // Keyed by content: every header row is distinct, and the header is
-        // rebuilt wholesale on resize rather than reordered.
-        <Text key={rowText(row)} wrap="truncate">
-          {row.map((segment, index) => (
-            <Text
-              // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional runs
-              key={`${index}-${segment.shade}`}
-              color={tint(theme, shadeColor(theme, segment.shade))}
-              dimColor={segment.shade !== "lit"}
-            >
-              {segment.text}
-            </Text>
-          ))}
-        </Text>
-      ))}
+    // Root mouse-up implements renderer-wide copy-on-select.
+    // biome-ignore lint/a11y/noStaticElementInteractions: terminal selection surface
+    <box
+      onMouseUp={() => void copySelection()}
+      style={{
+        width: dimensions.width,
+        height: dimensions.height,
+        flexDirection: "column",
+        backgroundColor: colors.background,
+      }}
+    >
+      {showBrand && <BrandLockup />}
 
-      <Box
-        borderStyle="round"
-        borderColor={tint(theme, theme.colors.chrome)}
-        flexDirection="column"
-        paddingX={1}
-        height={height + 2}
+      <box
+        style={{
+          height: compact ? 2 : 3,
+          flexShrink: 0,
+          flexDirection: "row",
+          alignItems: "center",
+          paddingLeft: 2,
+          paddingRight: 2,
+          border: ["bottom"],
+          borderColor: colors.chrome,
+          backgroundColor: colors.surface,
+        }}
       >
-        {shown.map((line, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional by nature
-          <Text key={`${index}-${line.text}`} color={colorFor(theme, line.kind)} wrap="truncate">
-            {line.text === "" ? " " : line.text}
-          </Text>
-        ))}
-      </Box>
+        <text selectable style={{ fg: colors.accent, attributes: TextAttributes.BOLD }}>
+          ◆ AISET
+        </text>
+        <text selectable style={{ fg: colors.muted }}>
+          {`  v${header.version}`}
+        </text>
+        {!narrow && (
+          <text selectable style={{ fg: colors.muted, marginLeft: 2, flexGrow: 1, truncate: true }}>
+            {session.ctx.paths.root}
+          </text>
+        )}
+        <box style={{ flexGrow: narrow ? 1 : 0 }} />
+        <text selectable={false} style={{ fg: header.current ? colors.ok : colors.warn }}>
+          {header.current ? "● connected" : "● schema behind"}
+        </text>
+        {!narrow && (
+          <text selectable={false} style={{ fg: colors.muted }}>
+            {`  ${header.totalRuns} runs  ${header.totalEvents} events`}
+          </text>
+        )}
+      </box>
 
-      {/* Truncated, never wrapped: a second row here would push the prompt off
-          the bottom of the terminal and break the CHROME_ROWS budget. */}
-      <Text color={tint(theme, theme.colors.muted)} wrap="truncate">
-        {statusLine}
-      </Text>
+      {!compact && (
+        <box
+          style={{
+            height: 3,
+            flexShrink: 0,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingLeft: 1,
+            paddingRight: 1,
+            gap: 1,
+            backgroundColor: colors.background,
+          }}
+        >
+          <Action label="Help" hint="/help" onActivate={() => submit("/help")} />
+          <Action
+            label="Runs"
+            hint="/runs"
+            onActivate={() => submit("/runs --active --limit 12")}
+          />
+          <Action
+            label="Clear"
+            hint="ctrl+l"
+            onActivate={() => {
+              setBlocks([]);
+              setSelected(null);
+            }}
+          />
+          <Action label="Bottom" hint="ctrl+end" onActivate={toBottom} />
+          <box style={{ flexGrow: 1 }} />
+          {!narrow && (
+            <text selectable={false} style={{ fg: colors.muted }}>
+              page ↑↓ scroll · alt+↑↓ select entry
+            </text>
+          )}
+        </box>
+      )}
 
-      <Prompt theme={theme} busy={busy} onSubmit={onSubmit} onExit={exit} />
-    </Box>
+      <scrollbox
+        ref={scrollRef}
+        focused={false}
+        onMouseScroll={() => setTimeout(updateFollowing, 0)}
+        stickyScroll
+        stickyStart="bottom"
+        viewportCulling
+        verticalScrollbarOptions={{
+          visible: true,
+          trackOptions: {
+            foregroundColor: colors.accent,
+            backgroundColor: colors.surfaceRaised,
+          },
+        }}
+        viewportOptions={{ paddingRight: 1 }}
+        style={{ flexGrow: 1, minHeight: 0, width: "100%" }}
+      >
+        <box style={{ width: "100%", height: 1 }} />
+        {blocks.length === 0 ? (
+          <box style={{ width: "100%", paddingLeft: 3, paddingTop: 2 }}>
+            <text selectable style={{ fg: colors.muted }}>
+              Transcript cleared. Type /help or choose an action above.
+            </text>
+          </box>
+        ) : (
+          blocks.map((block, index) => (
+            <Block
+              // Transcript entries are append-only; /clear removes the whole collection.
+              // biome-ignore lint/suspicious/noArrayIndexKey: append-only terminal transcript
+              key={`${index}-${block.kind}`}
+              block={block}
+              index={index}
+              selected={selected === index}
+              onSelect={() => setSelected(index)}
+            />
+          ))
+        )}
+        <box style={{ width: "100%", height: 1 }} />
+      </scrollbox>
+
+      <box
+        style={{
+          height: 1,
+          flexShrink: 0,
+          flexDirection: "row",
+          paddingLeft: 2,
+          paddingRight: 2,
+          backgroundColor: colors.surface,
+        }}
+      >
+        <text selectable={false} style={{ fg: busy ? colors.warn : colors.ok }}>
+          {busy
+            ? `${theme.symbols.spinner[spinnerFrame % theme.symbols.spinner.length]} agents working`
+            : "● ready"}
+        </text>
+        <text
+          selectable={false}
+          style={{ fg: colors.muted, flexGrow: 1, marginLeft: 2, truncate: true }}
+        >
+          {notice}
+        </text>
+        <text selectable={false} style={{ fg: following ? colors.muted : colors.warn }}>
+          {following ? "FOLLOWING" : "SCROLLED BACK"}
+        </text>
+      </box>
+
+      <box
+        style={{
+          minHeight: 3,
+          flexShrink: 0,
+          flexDirection: "column",
+          paddingLeft: 1,
+          paddingRight: 1,
+          paddingTop: 1,
+          backgroundColor: colors.surfaceRaised,
+          border: ["top"],
+          borderColor: busy ? colors.warn : colors.accentSoft,
+        }}
+      >
+        <box style={{ flexDirection: "row", alignItems: "center" }}>
+          <text
+            selectable={false}
+            style={{ fg: colors.accent, width: 2, attributes: TextAttributes.BOLD }}
+          >
+            ›
+          </text>
+          <input
+            ref={inputRef}
+            focused
+            value={value}
+            placeholder="Type /help or /launch <prompt>"
+            onInput={setValue}
+            onSubmit={() => submit(inputRef.current?.value ?? value)}
+            style={{
+              flexGrow: 1,
+              textColor: colors.textStrong,
+              backgroundColor: colors.surfaceRaised,
+              focusedTextColor: colors.textStrong,
+              focusedBackgroundColor: colors.surfaceRaised,
+              placeholderColor: colors.muted,
+              cursorColor: colors.accent,
+              selectionBg: colors.selection,
+              selectionFg: colors.selectionText,
+            }}
+          />
+          {!narrow && (
+            <text selectable={false} style={{ fg: colors.muted }}>
+              {formatTimestamp(new Date().toISOString()).slice(11)}
+            </text>
+          )}
+        </box>
+        <text selectable={false} style={{ fg: colors.muted, truncate: true }}>
+          {completions.length > 1
+            ? `  ${completions.slice(0, 8).join("  ")}`
+            : "  tab complete · ↑↓ history · ctrl+d quit"}
+        </text>
+      </box>
+    </box>
   );
 }

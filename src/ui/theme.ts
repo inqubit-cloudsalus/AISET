@@ -36,16 +36,27 @@ const ASCII: Symbols = {
   spinner: ["|", "/", "-", "\\"],
 };
 
-/** Colours are Ink colour names. Grey chrome, cyan accent, status colours reserved. */
+/**
+ * Shared 24-bit palette. Ink and OpenTUI both accept hex colours, which keeps
+ * one-shot views and the interactive shell visually consistent.
+ */
 export const colors = {
-  accent: "cyan",
-  chrome: "gray",
-  muted: "gray",
-  text: "white",
-  ok: "green",
-  warn: "yellow",
-  fail: "red",
-  pending: "gray",
+  background: "#0b0d10",
+  surface: "#11151a",
+  surfaceRaised: "#181d24",
+  surfaceSelected: "#1d2833",
+  accent: "#67d4ff",
+  accentSoft: "#28556a",
+  chrome: "#39424e",
+  muted: "#7f8b99",
+  text: "#e7edf4",
+  textStrong: "#ffffff",
+  ok: "#70d6a0",
+  warn: "#f4c96b",
+  fail: "#ff7b86",
+  pending: "#7f8b99",
+  selection: "#264f78",
+  selectionText: "#ffffff",
 } as const;
 
 export type StatusTone = "ok" | "warn" | "fail" | "pending";

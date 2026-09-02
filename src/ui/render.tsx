@@ -57,25 +57,34 @@ export async function renderView(view: View, opts: OutputOptions = {}): Promise<
 }
 
 /**
- * Mounts a long-lived interactive app (the shell) rather than a one-shot View.
- * `renderView`'s json/plain fan-out does not apply: the caller has already
- * established that the environment is an interactive terminal.
- *
- * The app takes the alternate screen, as vim and less do. Without it the first
- * frame is painted wherever the cursor happened to be — usually the bottom line
- * — so the terminal scrolls to make room and the top of the header is cut off
- * until the next redraw. It also means the shell leaves the scrollback it found
- * exactly as it was.
+ * Mounts the rich interactive shell in OpenTUI. One-shot views intentionally
+ * stay on Ink: they exit after one frame and retain the plain/JSON fallback.
  */
-export async function renderApp(
-  element: ReactElement,
-  opts: { stdin?: NodeJS.ReadStream } = {},
-): Promise<void> {
-  const { render } = await import("ink");
-  const instance = render(element, {
+export async function renderOpenTuiApp(element: ReactElement): Promise<void> {
+  const [{ createCliRenderer }, { createRoot }] = await Promise.all([
+    import("@opentui/core"),
+    import("@opentui/react"),
+  ]);
+  const renderer = await createCliRenderer({
+    targetFps: 60,
+    maxFps: 60,
+    gatherStats: false,
     exitOnCtrlC: false,
-    stdin: opts.stdin,
-    alternateScreen: true,
+    screenMode: "alternate-screen",
+    externalOutputMode: "passthrough",
+    useMouse: true,
+    enableMouseMovement: true,
+    autoFocus: false,
+    openConsoleOnError: false,
+    backgroundColor: "#0b0d10",
   });
-  await instance.waitUntilExit();
+  const root = createRoot(renderer);
+
+  try {
+    root.render(element);
+    await new Promise<void>((resolve) => renderer.once("destroy", resolve));
+  } finally {
+    root.unmount();
+    if (!renderer.isDestroyed) renderer.destroy();
+  }
 }

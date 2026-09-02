@@ -21,6 +21,8 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.46",
     "@ai-sdk/openai": "^4.0.53",
+    "@opentui/core": "^0.5.10",
+    "@opentui/react": "^0.5.10",
     "ai": "^7.0.87",
     "commander": "^15.0.0",
     "ink": "^7.1.1",
