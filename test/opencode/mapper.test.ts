@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseFrame } from "../../src/opencode/client.ts";
 import { EventMapper } from "../../src/opencode/mapper.ts";
-import type { Mapped, MappedEvent } from "../../src/opencode/types.ts";
+import type { Mapped, MappedEvent, OpenCodeEvent } from "../../src/opencode/types.ts";
 import { CHILD_SESSION, fixtureEvents, ROOT_SESSION } from "./fixture.ts";
 
 function replay(mapper = new EventMapper(ROOT_SESSION)) {
@@ -194,5 +194,69 @@ describe("parseFrame", () => {
       type: "session.idle",
       properties: {},
     });
+  });
+});
+
+describe("a mapper rebuilt after a restart", () => {
+  test("still owns the subagent sessions the run had found", () => {
+    const mapper = new EventMapper("ses_root", { childSessions: ["ses_child"] });
+    expect(mapper.ownsSession("ses_child")).toBe(true);
+    expect(mapper.ownsSession("ses_other")).toBe(false);
+  });
+
+  test("does not record a tool call, its artifact or its usage twice", () => {
+    const prior = {
+      toolStates: ["call-1:completed"],
+      messages: ["msg-1"],
+      artifacts: ["notes.md"],
+    };
+    const mapper = new EventMapper("ses_root", prior);
+
+    const tool = mapper.map({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          sessionID: "ses_root",
+          callID: "call-1",
+          tool: "write",
+          state: { status: "completed", title: "write notes.md", input: { filePath: "notes.md" } },
+        },
+      },
+    } as OpenCodeEvent);
+    expect(tool.events).toHaveLength(0);
+    expect(tool.artifacts).toHaveLength(0);
+
+    const message = mapper.map({
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "msg-1",
+          sessionID: "ses_root",
+          role: "assistant",
+          cost: 1,
+          tokens: { input: 5, output: 5 },
+          time: { completed: 1 },
+        },
+      },
+    } as OpenCodeEvent);
+    expect(message.usage).toHaveLength(0);
+  });
+
+  test("a call the run had not seen is still recorded", () => {
+    const mapper = new EventMapper("ses_root", { toolStates: ["call-1:completed"] });
+    const mapped = mapper.map({
+      type: "message.part.updated",
+      properties: {
+        part: {
+          type: "tool",
+          sessionID: "ses_root",
+          callID: "call-2",
+          tool: "bash",
+          state: { status: "completed", title: "ls", input: {} },
+        },
+      },
+    } as OpenCodeEvent);
+    expect(mapped.events).toHaveLength(1);
   });
 });

@@ -7,7 +7,7 @@ import { findRun, listChildRuns, listRuns, runDurationMs } from "../../db/reposi
 import { usageTotalsWithChildren } from "../../db/repositories/usage.ts";
 import { isTerminal, RUN_STATUSES, type RunStatus } from "../../db/types.ts";
 import { type CancelResult, cancel } from "../../opencode/adapter.ts";
-import { toArtifactRow, toEventRow, toRunRow } from "../../ui/mappers.ts";
+import { toArtifactRow, toEventRow, toOwner, toRunRow } from "../../ui/mappers.ts";
 import type { RunCancelModel, RunDetailModel, RunListModel, TailModel } from "../../ui/models.ts";
 import { plainRunCancel, plainRunDetail, plainRunList, plainTail } from "../../ui/plain.ts";
 import { renderView } from "../../ui/render.tsx";
@@ -79,6 +79,7 @@ export async function runRunsShow(ctx: Context, id: string, opts: ShowOptions): 
     exitCode: run.exit_code,
     workdir: run.workdir,
     parentRunId: run.parent_run_id,
+    owner: toOwner(run),
     children: listChildRuns(db, runId).map(toRunRow),
     events: listEvents(db, runId).map(toEventRow),
     eventCount: countEvents(db, runId),

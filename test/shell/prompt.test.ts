@@ -111,7 +111,7 @@ describe("completion", () => {
   });
 
   test("several matches extend only as far as they agree", () => {
-    const state = apply(typed("/r"), { type: "complete" });
+    const state = apply(typed("/ru"), { type: "complete" });
     expect(state.buffer).toBe("/run");
     expect(promptCompletions(state)).toEqual(["/runs", "/run"]);
   });

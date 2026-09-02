@@ -8,6 +8,8 @@ import type {
   EventRow,
   HomeModel,
   InitModel,
+  OwnerModel,
+  RecoverModel,
   RunCancelModel,
   RunDetailModel,
   RunListModel,
@@ -127,6 +129,19 @@ function cancelNote(model: RunCancelModel): string {
   return "no process confirmed the stop in time; the run was closed anyway";
 }
 
+/**
+ * Who is driving the run. A stale owner is said out loud rather than left for
+ * the reader to work out from a timestamp: it is the difference between a run
+ * that is working and one nobody is coming back for.
+ */
+function ownerLine(owner: OwnerModel | null): string {
+  if (owner === null) return "—";
+  const who = owner.pid === null ? "unknown" : `pid ${owner.pid}`;
+  const host = owner.host ? ` @${owner.host}` : "";
+  const beat = owner.heartbeatAt ? formatTimestamp(owner.heartbeatAt) : "never";
+  return `${who}${host} · last beat ${beat}${owner.stale ? " · stale, recoverable" : ""}`;
+}
+
 export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
   const r = model.run;
   const lines: string[] = [
@@ -144,6 +159,7 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
     `workdir     ${model.workdir ?? "—"}`,
   ];
   if (model.parentRunId) lines.push(`parent run  r_${model.parentRunId}`);
+  lines.push(`owner       ${ownerLine(model.owner)}`);
 
   // A group's whole point is the team under it, so it is shown before the
   // group's own events — which are only the bookkeeping ones.
@@ -182,6 +198,31 @@ export function plainRunDetail(model: RunDetailModel, theme: Theme): string {
     `  tokens out  ${model.usage.outputTokens}`,
     `  cost usd    ${model.usage.costUsd.toFixed(4)}`,
   );
+  return lines.join("\n");
+}
+
+/**
+ * What recovery found and what it did. A dry run says so in the header, so a
+ * list of runs that were only inspected can never read as a list of runs that
+ * were closed.
+ */
+export function plainRecover(model: RecoverModel, theme: Theme): string {
+  const head = model.dryRun ? "recover (dry run — nothing written)" : "recover";
+  const lines: string[] = [head, ""];
+  if (model.entries.length === 0) {
+    lines.push("  no runs were left open by a dead process");
+    return lines.join("\n");
+  }
+  for (const e of model.entries) {
+    lines.push(
+      `  ${symbolForTone(theme, e.tone)} ${e.displayId} ${e.action.padEnd(10)} ${e.reason}`,
+    );
+  }
+  const closed = model.entries.filter((e) => e.action === "closed").length;
+  const reattached = model.entries.filter((e) => e.action === "reattached").length;
+  const left = model.entries.length - closed - reattached;
+  const b = theme.symbols.bullet;
+  lines.push("", `${reattached} re-attached ${b} ${closed} closed ${b} ${left} left alone`);
   return lines.join("\n");
 }
 

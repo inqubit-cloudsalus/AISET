@@ -42,7 +42,7 @@ describe("migrations", () => {
     );
     expect(isCurrent(db)).toBe(false);
 
-    expect(migrate(db)).toEqual(["0002_agents", "0003_cancel"]);
+    expect(migrate(db)).toEqual(["0002_agents", "0003_cancel", "0004_recovery"]);
     expect(isCurrent(db)).toBe(true);
     // Catching up twice is a no-op, not a duplicate ALTER.
     expect(migrate(db)).toEqual([]);
@@ -53,6 +53,8 @@ describe("migrations", () => {
       );
     expect(column("run_events", "agent")).toBe(true);
     expect(column("runs", "opencode_session_id")).toBe(true);
+    expect(column("runs", "heartbeat_at")).toBe(true);
+    expect(column("runs", "server_url")).toBe(true);
     expect(column("runs", "cancel_requested_at")).toBe(true);
     db.close();
   });

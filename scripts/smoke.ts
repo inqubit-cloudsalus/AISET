@@ -162,9 +162,36 @@ try {
   const missingPrompt = await aiset(workdir, "run");
   assert(missingPrompt.code !== 0, "run without a prompt exits non-zero");
 
+  // 7b. recover. Nothing here was ever abandoned — the seeded run is closed and
+  // no engine ran — so recovery must find nothing and say so, twice over: once
+  // as a dry run, once for real.
+  const dry = await aiset(workdir, "recover", "--dry-run", "--json");
+  assert(dry.code === 0, "recover --dry-run exits 0");
+  const dryModel = json<{ entries: unknown[]; dryRun: boolean }>(dry, "recover --dry-run");
+  assert(dryModel.entries.length === 0, "recover finds nothing to recover on a clean database");
+  assert(dryModel.dryRun === true, "recover --dry-run says it wrote nothing");
+
+  const recovered = await aiset(workdir, "recover", "--json");
+  assert(recovered.code === 0, "recover exits 0");
+  assert(
+    json<{ entries: unknown[] }>(recovered, "recover").entries.length === 0,
+    "recover leaves a closed run alone",
+  );
+  const stillClosed = await aiset(workdir, "runs", "show", seeded.displayId, "--json");
+  assert(
+    json<{ run: { status: string }; owner: unknown }>(stillClosed, "runs show").run.status ===
+      "succeeded",
+    "recover did not reopen a finished run",
+  );
+  assert(
+    "owner" in json<Record<string, unknown>>(stillClosed, "runs show"),
+    "runs show reports who owns the run",
+  );
+
   // 8. doctor last, so a broken DB would already have surfaced
   const doctor = await aiset(workdir, "doctor");
   assert(doctor.code === 0, "doctor exits 0");
+  assert(doctor.stdout.includes("open runs"), "doctor reports whether runs were abandoned");
   assert(!/sk-|api[_-]?key=\S/i.test(doctor.stdout), "doctor never prints a key value");
 } finally {
   rmSync(workdir, { recursive: true, force: true });

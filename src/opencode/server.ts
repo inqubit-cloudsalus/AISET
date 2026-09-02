@@ -30,9 +30,11 @@ const READY = /listening on (https?:\/\/\S+)/i;
  * shutting down, so the listener is the only handle we have left. It is a safe
  * one: this URL was parsed from the output of the server we started.
  *
- * Elsewhere the direct kill already worked and this is a no-op.
+ * Elsewhere the direct kill already worked and this is a no-op — including when
+ * recovery calls it on a server whose process we never spawned, which is the
+ * one case where nothing else can reach it.
  */
-async function killListener(url: string): Promise<void> {
+export async function stopServerAt(url: string): Promise<void> {
   if (process.platform !== "win32") return;
   const port = Number.parseInt(new URL(url).port, 10);
   if (!Number.isFinite(port) || port <= 0) return;
@@ -130,7 +132,7 @@ export async function startServer(opts: StartServerOptions): Promise<OpenCodeSer
       const forced = setTimeout(() => proc.kill(9), 3_000);
       await Promise.race([proc.exited, Bun.sleep(6_000)]);
       clearTimeout(forced);
-      await killListener(url);
+      await stopServerAt(url);
     },
   };
 }

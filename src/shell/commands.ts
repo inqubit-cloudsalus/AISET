@@ -1,4 +1,5 @@
 import { collectChecks } from "../cli/commands/doctor.ts";
+import { toRecoverModel } from "../cli/commands/recover.ts";
 import { seedDemoRun } from "../cli/commands/seed.ts";
 import { readConfig } from "../core/config.ts";
 import { displayRunId, normalizeRunId } from "../core/ids.ts";
@@ -19,12 +20,14 @@ import { usageTotals, usageTotalsWithChildren } from "../db/repositories/usage.t
 import { RUN_STATUSES, type RunStatus } from "../db/types.ts";
 import { cancel, observe, start } from "../opencode/adapter.ts";
 import { type GroupTask, startGroup } from "../opencode/group.ts";
-import { toArtifactRow, toEventRow, toRunRow } from "../ui/mappers.ts";
+import { findOrphans, type Recovered, recover } from "../opencode/recover.ts";
+import { toArtifactRow, toEventRow, toOwner, toRunRow } from "../ui/mappers.ts";
 import type { DbStatusModel, RunCancelModel, RunDetailModel, RunListModel } from "../ui/models.ts";
 import {
   plainDbStatus,
   plainDoctor,
   plainEventLine,
+  plainRecover,
   plainRunCancel,
   plainRunDetail,
   plainRunList,
@@ -211,6 +214,7 @@ const runShow: SlashCommand = {
       exitCode: run.exit_code,
       workdir: run.workdir,
       parentRunId: run.parent_run_id,
+      owner: toOwner(run),
       children: listChildRuns(session.db, runId).map(toRunRow),
       events: listEvents(session.db, runId).map(toEventRow),
       eventCount: countEvents(session.db, runId),
@@ -436,6 +440,43 @@ const cancelRun: SlashCommand = {
   },
 };
 
+const recoverRuns: SlashCommand = {
+  name: "recover",
+  summary: "resume or close runs left open by a process that died",
+  usage: "/recover [--id <run>] [--dry-run]",
+  async run(session, args, emit) {
+    const { flags } = parseFlags(args);
+    const dryRun = flags.has("dry-run");
+    const id = flags.get("id");
+    const { symbols } = session.theme;
+
+    if (id === undefined && findOrphans(session.db).length === 0) {
+      return output(`${symbols.ok} nothing to recover — every open run still has a live owner`);
+    }
+
+    let results: Recovered[];
+    try {
+      results = await recover(session.db, id ? normalizeRunId(id) : undefined, { dryRun });
+    } catch (err) {
+      return failure(`recover: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // A re-attached run is pumped by this shell from here on, so its end is
+    // reported the way a launch's is: detached, so the prompt comes straight back.
+    for (const result of results) {
+      void result.finished?.then(
+        (run) =>
+          emit({
+            kind: run.status === "succeeded" ? "output" : "error",
+            text: `${run.status === "succeeded" ? symbols.ok : symbols.fail} ${displayRunId(run.id)} ${run.status} (recovered)`,
+          }),
+        () => {},
+      );
+    }
+    return output(plainRecover(toRecoverModel(results, dryRun), session.theme));
+  },
+};
+
 const clear: SlashCommand = {
   name: "clear",
   summary: "clear the transcript",
@@ -463,6 +504,7 @@ export const COMMANDS: SlashCommand[] = [
   launch,
   multiLaunch,
   cancelRun,
+  recoverRuns,
   doctor,
   seed,
   clear,

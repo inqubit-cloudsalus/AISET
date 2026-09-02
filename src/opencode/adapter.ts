@@ -23,6 +23,7 @@ import {
 } from "../db/types.ts";
 import { HttpOpenCodeApi, type OpenCodeApi } from "./client.ts";
 import { EventMapper } from "./mapper.ts";
+import { beat, claim, HEARTBEAT_MS } from "./ownership.ts";
 import { lease, type ServerLease } from "./pool.ts";
 import type { Mapped, StartTask } from "./types.ts";
 
@@ -56,6 +57,8 @@ interface LiveRun {
   abort: AbortController;
   api: OpenCodeApi;
   sessionId: string;
+  /** Carried over by a recovered run, so replayed events are not recorded twice. */
+  mapper?: EventMapper;
   /** Set by `kill` before it aborts, so the pump knows the stream ended on purpose. */
   killed: boolean;
 }
@@ -139,6 +142,9 @@ export async function start(
   }
 
   updateRun(db, run.id, { status: "running", opencodeSessionId: sessionId });
+  // From here on the run has an owner. Whoever restarts AISET later reads this
+  // to tell a run that is still working from one whose process died under it.
+  claim(db, run.id, server?.url ?? null);
   appendEvent(db, {
     runId: run.id,
     type: "start",
@@ -168,6 +174,48 @@ export async function start(
   return { runId: run.id, sessionId, finished };
 }
 
+/** Runs this process is pumping right now. Recovery uses it to leave them alone. */
+export function liveRunIds(): ReadonlySet<string> {
+  return new Set(live.keys());
+}
+
+export interface AttachOptions extends AdapterOptions {
+  /** Seeded with what the run already recorded, so a replay is not counted twice. */
+  mapper?: EventMapper;
+  /** Released once the pump ends; recovery passes a server stop when it owns one. */
+  stop?: () => Promise<void>;
+}
+
+/**
+ * Takes over a session that is already running, without creating a run.
+ *
+ * This is the other way into `pump`: `start` gets there by launching an agent,
+ * recovery gets there by finding one still alive after its launcher died. The
+ * pump itself does not care which — it claims the run, streams the rest of the
+ * session into SQLite and finalizes exactly as it would have.
+ */
+export function attach(
+  db: Db,
+  runId: string,
+  api: OpenCodeApi,
+  sessionId: string,
+  opts: AttachOptions = {},
+): Promise<Run> {
+  const run = getRun(db, runId);
+  const workdir = run.workdir ?? process.cwd();
+  claim(db, runId, run.server_url);
+
+  const abort = new AbortController();
+  const handle: LiveRun = { abort, api, sessionId, killed: false, mapper: opts.mapper };
+  live.set(runId, handle);
+
+  return pump(db, runId, workdir, handle, opts).finally(async () => {
+    live.delete(runId);
+    abort.abort();
+    await opts.stop?.();
+  });
+}
+
 /** Consumes the event stream to its end, writing every mapped row as it arrives. */
 async function pump(
   db: Db,
@@ -178,12 +226,20 @@ async function pump(
 ): Promise<Run> {
   const { abort, api } = handle;
   const { timeoutMs } = opts;
-  const mapper = new EventMapper(handle.sessionId);
+  const mapper = handle.mapper ?? new EventMapper(handle.sessionId);
   let terminal: RunStatus | null = null;
 
   // A cancel from another process can only reach the engine through whoever
   // owns the session, so the owner watches the database for the request.
+  // The same tick is the run's sign of life. One timer rather than two: the
+  // heartbeat is only useful while somebody is pumping, which is exactly here.
+  let lastBeat = 0;
   const canceller = setInterval(() => {
+    const now = Date.now();
+    if (now - lastBeat >= HEARTBEAT_MS) {
+      lastBeat = now;
+      beat(db, runId);
+    }
     if (getRun(db, runId).cancel_requested_at === null) return;
     clearInterval(canceller);
     void stopSession(handle);
@@ -242,7 +298,14 @@ export function exitCodeFor(status: RunStatus): number {
   return status === "killed" ? 130 : 1;
 }
 
-function writeMapped(db: Db, runId: string, workdir: string, mapped: Mapped): void {
+/**
+ * Writes everything one mapped event contributes.
+ *
+ * Exported for recovery, which replays a session's history through the same
+ * path the pump uses — the rows a recovered run gains are written by exactly
+ * the code that would have written them had nothing crashed.
+ */
+export function writeMapped(db: Db, runId: string, workdir: string, mapped: Mapped): void {
   for (const e of mapped.events) {
     appendEvent(db, {
       runId,
@@ -273,6 +336,7 @@ function writeMapped(db: Db, runId: string, workdir: string, mapped: Mapped): vo
   for (const u of mapped.usage) {
     recordUsage(db, {
       runId,
+      messageId: u.messageId,
       provider: u.provider,
       model: u.model,
       inputTokens: u.inputTokens,

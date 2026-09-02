@@ -7,12 +7,16 @@ import {
 } from "../../src/db/repositories/artifacts.ts";
 import { appendEvent, countEvents, listEvents } from "../../src/db/repositories/events.ts";
 import {
+  claimRun,
   countByStatus,
   createRun,
   findRun,
   getRun,
+  heartbeat,
   listActiveRuns,
+  listRecoverableRuns,
   listRuns,
+  listRunsOnServer,
   requestCancel,
   runDurationMs,
   updateRun,
@@ -224,5 +228,64 @@ describe("group totals", () => {
     // A run with no agents under it is unchanged by the roll-up.
     expect(usageTotalsWithChildren(db, a.id).costUsd).toBeCloseTo(0.07, 10);
     db.close();
+  });
+});
+
+describe("ownership columns", () => {
+  test("a claim round-trips, and a heartbeat only moves the beat", () => {
+    const db = freshDb();
+    const run = createRun(db, { taskTitle: "owned", engine: "opencode", status: "running" });
+    expect(run.owner_pid).toBeNull();
+    expect(run.heartbeat_at).toBeNull();
+
+    claimRun(db, run.id, {
+      pid: 99,
+      host: "box",
+      nonce: "n1",
+      serverUrl: "http://127.0.0.1:7",
+    });
+    const claimed = getRun(db, run.id);
+    expect(claimed.owner_pid).toBe(99);
+    expect(claimed.owner_host).toBe("box");
+    expect(claimed.owner_nonce).toBe("n1");
+    expect(claimed.server_url).toBe("http://127.0.0.1:7");
+    expect(claimed.heartbeat_at).not.toBeNull();
+
+    heartbeat(db, run.id);
+    const beaten = getRun(db, run.id);
+    expect(beaten.owner_nonce).toBe("n1");
+    expect(beaten.status).toBe("running");
+  });
+
+  test("only open runs are recoverable, oldest first", () => {
+    const db = freshDb();
+    const first = createRun(db, {
+      taskTitle: "one",
+      engine: "opencode",
+      status: "running",
+      startedAt: "2026-09-01T06:00:00.000Z",
+    });
+    const second = createRun(db, {
+      taskTitle: "two",
+      engine: "opencode",
+      status: "pending",
+      startedAt: "2026-09-01T07:00:00.000Z",
+    });
+    const done = createRun(db, { taskTitle: "done", engine: "opencode", status: "succeeded" });
+
+    expect(listRecoverableRuns(db).map((r) => r.id)).toEqual([first.id, second.id]);
+    expect(listRecoverableRuns(db).map((r) => r.id)).not.toContain(done.id);
+  });
+
+  test("runs are found by the server they were talking to, open ones only", () => {
+    const db = freshDb();
+    const url = "http://127.0.0.1:7";
+    const open = createRun(db, { taskTitle: "open", engine: "opencode", status: "running" });
+    const closed = createRun(db, { taskTitle: "closed", engine: "opencode", status: "killed" });
+    for (const id of [open.id, closed.id]) {
+      claimRun(db, id, { pid: 1, host: "box", nonce: "n", serverUrl: url });
+    }
+    expect(listRunsOnServer(db, url).map((r) => r.id)).toEqual([open.id]);
+    expect(listRunsOnServer(db, "http://127.0.0.1:8")).toEqual([]);
   });
 });

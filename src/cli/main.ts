@@ -5,6 +5,7 @@ import { runDbMigrate, runDbStatus } from "./commands/db.ts";
 import { runDoctor } from "./commands/doctor.ts";
 import { runHome } from "./commands/home.ts";
 import { runInit } from "./commands/init.ts";
+import { runRecover } from "./commands/recover.ts";
 import { runRun } from "./commands/run.ts";
 import { runRunsCancel, runRunsList, runRunsShow, runRunsTail } from "./commands/runs.ts";
 import { runSeed } from "./commands/seed.ts";
@@ -114,6 +115,14 @@ withGlobals(
     .description("stop an active run, wherever it is running")
     .option("--wait <ms>", "how long to wait for the owning process to confirm (default 5000)"),
 ).action((id, opts, cmd: Command) => run(() => runRunsCancel(ctx(cmd), id, opts)));
+
+withGlobals(
+  program
+    .command("recover")
+    .description("resume or close runs left open by a process that died")
+    .option("--id <id>", "recover one run rather than every orphan")
+    .option("--dry-run", "report what would happen and write nothing"),
+).action((opts, cmd: Command) => run(() => runRecover(ctx(cmd), opts)));
 
 const db = program.command("db").description("database maintenance (no destructive commands)");
 

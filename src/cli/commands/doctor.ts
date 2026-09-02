@@ -4,6 +4,7 @@ import { hasCredentials, PROVIDER_ENV } from "../../ai/provider.ts";
 import { readConfig } from "../../core/config.ts";
 import { openDb } from "../../db/client.ts";
 import { isCurrent, migrationStatus } from "../../db/migrate.ts";
+import { orphanNotice } from "../../opencode/recover.ts";
 import type { CheckResult, DoctorModel } from "../../ui/models.ts";
 import { plainDoctor } from "../../ui/plain.ts";
 import { renderView } from "../../ui/render.tsx";
@@ -51,6 +52,10 @@ export async function collectChecks(ctx: Context): Promise<DoctorModel> {
               `schema behind (${applied}/${status.length}) — run 'aiset db migrate'`,
             ),
       );
+      // Runs left behind by a process that died. Reported, never acted on: a
+      // check may not change the thing it is checking.
+      const orphans = orphanNotice(db);
+      checks.push(orphans ? warn("open runs", orphans) : pass("open runs", "none abandoned"));
       db.close();
     } catch (err) {
       checks.push(fail("database", `unreadable: ${(err as Error).message}`));

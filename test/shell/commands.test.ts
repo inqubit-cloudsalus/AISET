@@ -3,6 +3,7 @@ import { seedDemoRun } from "../../src/cli/commands/seed.ts";
 import type { Context } from "../../src/cli/context.ts";
 import { displayRunId } from "../../src/core/ids.ts";
 import { resolvePaths } from "../../src/core/paths.ts";
+import { createRun, getRun } from "../../src/db/repositories/runs.ts";
 import { COMMANDS, dispatch, findCommand, parseTasks } from "../../src/shell/commands.ts";
 import type { Session, ShellBlock } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
@@ -312,6 +313,49 @@ describe("/runs --active", () => {
     const { blocks } = await dispatch(session, "/runs --active");
     expect(blocks[0]!.kind).toBe("output");
     expect(hasAnsi(blocks[0]!.text)).toBe(false);
+    session.db.close();
+  });
+});
+
+describe("/recover", () => {
+  test("says so plainly when nothing was abandoned", async () => {
+    const session = makeSession();
+    seedDemoRun(session.db);
+    const { blocks } = await dispatch(session, "/recover");
+    expect(blocks[0]!.kind).toBe("output");
+    expect(blocks[0]!.text).toContain("nothing to recover");
+    expect(hasAnsi(blocks[0]!.text)).toBe(false);
+    session.db.close();
+  });
+
+  test("reports an abandoned run without closing it under --dry-run", async () => {
+    const session = makeSession();
+    const run = createRun(session.db, {
+      taskTitle: "left behind",
+      engine: "opencode",
+      status: "running",
+    });
+    const { blocks } = await dispatch(session, "/recover --dry-run");
+
+    expect(blocks[0]!.text).toContain("dry run");
+    expect(blocks[0]!.text).toContain(displayRunId(run.id));
+    expect(hasAnsi(blocks[0]!.text)).toBe(false);
+    expect(getRun(session.db, run.id).status).toBe("running");
+    session.db.close();
+  });
+
+  test("closes an abandoned run that never reached the engine", async () => {
+    const session = makeSession();
+    const run = createRun(session.db, {
+      taskTitle: "left behind",
+      engine: "opencode",
+      status: "running",
+    });
+    const { blocks } = await dispatch(session, `/recover --id ${displayRunId(run.id)}`);
+
+    expect(blocks[0]!.text).toContain("closed");
+    expect(getRun(session.db, run.id).status).toBe("killed");
+    expect(getRun(session.db, run.id).exit_code).toBe(130);
     session.db.close();
   });
 });

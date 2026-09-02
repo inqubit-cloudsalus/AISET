@@ -2,7 +2,8 @@ import { nowIso } from "../../core/ids.ts";
 import type { Db } from "../client.ts";
 import { parseRows, type RunUsage, RunUsageSchema } from "../types.ts";
 
-const COLUMNS = "id, run_id, provider, model, input_tokens, output_tokens, cost_usd, recorded_at";
+const COLUMNS =
+  "id, run_id, provider, model, input_tokens, output_tokens, cost_usd, recorded_at, message_id";
 
 export interface RecordUsageInput {
   runId: string;
@@ -12,14 +13,15 @@ export interface RecordUsageInput {
   outputTokens?: number | null;
   costUsd?: number | null;
   recordedAt?: string;
+  messageId?: string | null;
 }
 
 export function recordUsage(db: Db, input: RecordUsageInput): RunUsage {
   const res = db
     .query(
       `INSERT INTO run_usage (run_id, provider, model, input_tokens, output_tokens,
-         cost_usd, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         cost_usd, recorded_at, message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.runId,
@@ -29,6 +31,7 @@ export function recordUsage(db: Db, input: RecordUsageInput): RunUsage {
       input.outputTokens ?? null,
       input.costUsd ?? null,
       input.recordedAt ?? nowIso(),
+      input.messageId ?? null,
     );
   const rows = db
     .query(`SELECT ${COLUMNS} FROM run_usage WHERE id = ?`)

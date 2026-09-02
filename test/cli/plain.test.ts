@@ -3,9 +3,9 @@ import { seedDemoRun } from "../../src/cli/commands/seed.ts";
 import { listArtifacts } from "../../src/db/repositories/artifacts.ts";
 import { countEvents, listEvents } from "../../src/db/repositories/events.ts";
 import { usageTotals } from "../../src/db/repositories/usage.ts";
-import { toArtifactRow, toEventRow, toRunRow } from "../../src/ui/mappers.ts";
+import { toArtifactRow, toEventRow, toOwner, toRunRow } from "../../src/ui/mappers.ts";
 import type { RunCancelModel, RunDetailModel, RunListModel } from "../../src/ui/models.ts";
-import { plainRunCancel, plainRunDetail, plainRunList } from "../../src/ui/plain.ts";
+import { plainRecover, plainRunCancel, plainRunDetail, plainRunList } from "../../src/ui/plain.ts";
 import { makeTheme, toneForVerdict } from "../../src/ui/theme.ts";
 import { freshDb } from "../db/helpers.ts";
 
@@ -24,6 +24,7 @@ function seeded() {
     exitCode: run.exit_code,
     workdir: run.workdir,
     parentRunId: run.parent_run_id,
+    owner: toOwner(run),
     children: [],
     events: listEvents(db, run.id).map(toEventRow),
     eventCount: countEvents(db, run.id),
@@ -116,5 +117,61 @@ describe("plain renderers", () => {
   test("a filtered list names the filter", () => {
     const model: RunListModel = { runs: [], filterStatus: "failed", limit: 20 };
     expect(plainRunList(model, theme)).toContain("status=failed");
+  });
+});
+
+describe("recover output", () => {
+  test("an empty recovery says nothing was abandoned", () => {
+    const text = plainRecover({ entries: [], dryRun: false }, theme);
+    expect(text).toContain("no runs were left open");
+    expect(text).not.toContain("dry run");
+  });
+
+  test("a dry run is labelled as one, and every action is accounted for", () => {
+    const text = plainRecover(
+      {
+        dryRun: true,
+        entries: [
+          { displayId: "r_A", action: "reattached", tone: "ok", reason: "session still alive" },
+          { displayId: "r_B", action: "closed", tone: "warn", reason: "its server is gone" },
+          { displayId: "r_C", action: "skipped", tone: "pending", reason: "still owned" },
+        ],
+      },
+      theme,
+    );
+    expect(text).toContain("dry run — nothing written");
+    expect(text).toContain("r_A");
+    expect(text).toContain("its server is gone");
+    expect(text).toContain("1 re-attached");
+    expect(text).toContain("1 closed");
+    expect(text).toContain("1 left alone");
+    expect(text.includes(String.fromCharCode(27))).toBe(false);
+  });
+});
+
+describe("run detail owner line", () => {
+  test("a run nothing ever claimed shows no owner", () => {
+    const { detail } = seeded();
+    expect(plainRunDetail(detail, theme)).toContain("owner       —");
+  });
+
+  test("an abandoned owner is called stale, not just old", () => {
+    const { detail } = seeded();
+    const text = plainRunDetail(
+      {
+        ...detail,
+        owner: {
+          pid: 4242,
+          host: "box",
+          heartbeatAt: "2026-09-01T06:00:00.000Z",
+          stale: true,
+          serverUrl: null,
+        },
+      },
+      theme,
+    );
+    expect(text).toContain("owner       pid 4242 @box");
+    expect(text).toContain("2026-09-01 06:00:00");
+    expect(text).toContain("stale, recoverable");
   });
 });

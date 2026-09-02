@@ -13,6 +13,7 @@ import {
   finalize,
   start,
 } from "./adapter.ts";
+import { beat, claim, HEARTBEAT_MS } from "./ownership.ts";
 import type { StartTask } from "./types.ts";
 
 /** One agent's share of a group: its own prompt, its own OpenCode session. */
@@ -94,6 +95,10 @@ export async function startGroup(
       prompts: tasks.map((t) => t.prompt),
     },
   });
+  // A group has no session of its own, so it has no server either; what it
+  // claims is responsibility for the roll-up. Recovery reads this to know
+  // whether anyone is still waiting to close the group.
+  claim(db, parent.id, null);
   appendEvent(db, {
     runId: parent.id,
     type: "start",
@@ -164,7 +169,13 @@ function watchForCancel(
   parentRunId: string,
   opts: GroupOptions,
 ): ReturnType<typeof setInterval> {
+  let lastBeat = Date.now();
   const poller = setInterval(() => {
+    const now = Date.now();
+    if (now - lastBeat >= HEARTBEAT_MS) {
+      lastBeat = now;
+      beat(db, parentRunId);
+    }
     const parent = getRun(db, parentRunId);
     if (parent.cancel_requested_at === null) return;
     clearInterval(poller);

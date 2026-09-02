@@ -14,12 +14,24 @@ export interface PromptInput {
   model?: string | null;
 }
 
+/** One message in a session's history, with the parts it was built from. */
+export interface SessionMessage {
+  info: Record<string, unknown>;
+  parts: Record<string, unknown>[];
+}
+
 /** The slice of OpenCode's HTTP API the adapter uses. Faked in tests. */
 export interface OpenCodeApi {
   createSession(input: CreateSessionInput): Promise<string>;
   prompt(input: PromptInput): Promise<void>;
   abort(sessionId: string): Promise<void>;
   events(signal: AbortSignal): AsyncIterable<OpenCodeEvent>;
+  /**
+   * The session's history so far. Only recovery needs it — a live run hears
+   * everything on the event stream — so it is optional, and a transport that
+   * cannot answer simply leaves a recovered run to the stream.
+   */
+  messages?(sessionId: string): Promise<SessionMessage[]>;
 }
 
 export function splitModel(model: string | null | undefined): {
@@ -88,6 +100,53 @@ export class HttpOpenCodeApi implements OpenCodeApi {
       agent: input.agent,
       ...(model ? { model } : {}),
       parts: [{ type: "text", text: input.text }],
+    });
+  }
+
+  /**
+   * Whether this server still knows the session — the question recovery asks
+   * before deciding to re-attach. A refused connection, a timeout and a 404 all
+   * answer the same way: there is nothing left to attach to.
+   */
+  async sessionExists(sessionId: string, timeoutMs = 2_000): Promise<boolean> {
+    try {
+      const res = await fetch(this.url(`/session/${sessionId}`), {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Everything the session has said, whether or not anyone was listening.
+   *
+   * This is what a run missed while its process was dead: the event stream only
+   * carries what happens from the moment you connect, so without the history a
+   * recovered run would wait forever for an idle it already missed.
+   */
+  async messages(sessionId: string): Promise<SessionMessage[]> {
+    const res = await fetch(this.url(`/session/${sessionId}/message`), {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      throw new AisetError(
+        `OpenCode /session/${sessionId}/message failed with ${res.status}`,
+        (await res.text()).slice(0, 300),
+      );
+    }
+    const body = (await res.json()) as unknown;
+    if (!Array.isArray(body)) return [];
+    return body.flatMap((m) => {
+      const info = m as { info?: unknown; parts?: unknown };
+      if (typeof info.info !== "object" || info.info === null) return [];
+      return [
+        {
+          info: info.info as Record<string, unknown>,
+          parts: Array.isArray(info.parts) ? (info.parts as Record<string, unknown>[]) : [],
+        },
+      ];
     });
   }
 

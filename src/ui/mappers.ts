@@ -2,7 +2,8 @@
 import { displayRunId } from "../core/ids.ts";
 import { runDurationMs } from "../db/repositories/runs.ts";
 import type { Run, RunArtifact, RunEvent } from "../db/types.ts";
-import type { ArtifactRow, EventRow, RunRow } from "./models.ts";
+import { isOrphaned } from "../opencode/ownership.ts";
+import type { ArtifactRow, EventRow, OwnerModel, RunRow } from "./models.ts";
 import { type StatusTone, toneForStatus } from "./theme.ts";
 
 export function toRunRow(run: Run): RunRow {
@@ -15,6 +16,22 @@ export function toRunRow(run: Run): RunRow {
     taskId: run.task_id,
     startedAt: run.started_at,
     durationMs: runDurationMs(run),
+  };
+}
+
+/**
+ * The run's owner, or null when nothing ever claimed it. `stale` is the same
+ * judgement recovery makes, so the detail view and `aiset recover` cannot disagree
+ * about whether a run has been abandoned.
+ */
+export function toOwner(run: Run): OwnerModel | null {
+  if (run.owner_pid === null && run.heartbeat_at === null && run.server_url === null) return null;
+  return {
+    pid: run.owner_pid,
+    host: run.owner_host,
+    heartbeatAt: run.heartbeat_at,
+    stale: isOrphaned(run),
+    serverUrl: run.server_url,
   };
 }
 

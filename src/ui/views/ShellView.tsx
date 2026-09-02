@@ -1,5 +1,6 @@
 import { Box, Text, useApp, useInput, useStdout, useWindowSize } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { orphanNotice } from "../../opencode/recover.ts";
 import { dispatch } from "../../shell/commands.ts";
 import { shellHeader } from "../../shell/session.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
@@ -53,12 +54,22 @@ export function ShellView({ session, onWheel }: ShellViewProps) {
   const { columns, rows } = useWindowSize();
   const { stdout } = useStdout();
 
-  const [blocks, setBlocks] = useState<ShellBlock[]>(() => [
-    {
-      kind: "output",
-      text: `${theme.symbols.cursor} /help for commands ${theme.symbols.bullet} /db-status for the database ${theme.symbols.bullet} /exit to quit`,
-    },
-  ]);
+  const [blocks, setBlocks] = useState<ShellBlock[]>(() => {
+    const opening: ShellBlock[] = [
+      {
+        kind: "output",
+        text: `${theme.symbols.cursor} /help for commands ${theme.symbols.bullet} /db-status for the database ${theme.symbols.bullet} /exit to quit`,
+      },
+    ];
+    // Runs a dead process left behind are said once, on the way in. Reported,
+    // not acted on: recovery adopts sessions and closes runs, which is not
+    // something to do to a user who only opened a terminal.
+    const orphans = orphanNotice(session.db);
+    if (orphans) {
+      opening.push({ kind: "output", text: `${theme.symbols.warn} ${orphans} — /recover` });
+    }
+    return opening;
+  });
   const [busy, setBusy] = useState(false);
   /** null follows the tail; a number pins the first visible line. */
   const [offset, setOffset] = useState<number | null>(null);

@@ -72,6 +72,15 @@ export const RunSchema = z.object({
   opencode_session_id: z.string().nullable(),
   /** When a stop was asked for; the owning pump polls this to abort the session. */
   cancel_requested_at: z.string().nullable(),
+  /** The process driving this run. Null on rows written before recovery existed. */
+  owner_pid: z.number().int().nullable(),
+  owner_host: z.string().nullable(),
+  /** One ULID per AISET process, so a reused pid cannot pass for the same owner. */
+  owner_nonce: z.string().nullable(),
+  /** Last sign of life from the owner; a stale one is what marks a run orphaned. */
+  heartbeat_at: z.string().nullable(),
+  /** The OpenCode server this run's session lives on, for re-attaching to it. */
+  server_url: z.string().nullable(),
   schema_version: z.string(),
   meta: jsonColumn,
 });
@@ -111,6 +120,8 @@ export const RunUsageSchema = z.object({
   input_tokens: z.number().int().nullable(),
   output_tokens: z.number().int().nullable(),
   cost_usd: z.number().nullable(),
+  /** The assistant message this usage was reported on; null for older rows. */
+  message_id: z.string().nullable(),
   recorded_at: z.string().min(1),
 });
 export type RunUsage = z.infer<typeof RunUsageSchema>;

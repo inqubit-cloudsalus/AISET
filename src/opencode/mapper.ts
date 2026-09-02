@@ -37,6 +37,17 @@ function artifactKind(path: string): ArtifactKind {
   return /\.(log|txt)$/i.test(path) ? "log" : "patch";
 }
 
+/** What a mapper had learned before its process died, recovered from the database. */
+export interface PriorState {
+  childSessions?: Iterable<string>;
+  /** `${callId}:${status}` keys of tool states already recorded. */
+  toolStates?: Iterable<string>;
+  /** Assistant message ids whose usage has already been counted. */
+  messages?: Iterable<string>;
+  artifacts?: Iterable<string>;
+  agentBySession?: Iterable<[string, string]>;
+}
+
 /**
  * Translates OpenCode's event stream into AISET rows.
  *
@@ -57,7 +68,25 @@ export class EventMapper {
   private readonly seenArtifacts = new Set<string>();
   private readonly childSessions = new Set<string>();
 
-  constructor(private readonly rootSessionId: string) {}
+  /**
+   * `prior` restores what a previous mapper had learned about this same run,
+   * rebuilt from the rows it already wrote. A recovered run therefore still
+   * knows which subagent sessions belong to it, and will not record a tool
+   * call, a message's usage or an artifact a second time if OpenCode replays
+   * them on reconnect.
+   */
+  constructor(
+    private readonly rootSessionId: string,
+    prior?: PriorState,
+  ) {
+    for (const id of prior?.childSessions ?? []) this.childSessions.add(id);
+    for (const key of prior?.toolStates ?? []) this.seenToolStates.add(key);
+    for (const id of prior?.messages ?? []) this.seenUsage.add(id);
+    for (const path of prior?.artifacts ?? []) this.seenArtifacts.add(path);
+    for (const [session, agent] of prior?.agentBySession ?? []) {
+      this.agentBySession.set(session, agent);
+    }
+  }
 
   /** Sessions this run owns: the root plus every subagent session spawned under it. */
   ownsSession(sessionId: string | null): boolean {
@@ -138,6 +167,7 @@ export class EventMapper {
 
     const tokens = obj(info.tokens);
     const usage: MappedUsage = {
+      messageId: id,
       provider: str(info.providerID),
       model: str(info.modelID),
       inputTokens: num(tokens?.input),

@@ -12,6 +12,7 @@ import {
 
 const COLUMNS = `id, task_id, task_title, engine, model, status, verdict, started_at,
   ended_at, exit_code, workdir, parent_run_id, opencode_session_id, cancel_requested_at,
+  owner_pid, owner_host, owner_nonce, heartbeat_at, server_url,
   schema_version, meta`;
 
 export interface CreateRunInput {
@@ -108,6 +109,33 @@ export function isGroup(db: Db, runId: string): boolean {
   return row !== null;
 }
 
+/**
+ * Runs that have not reached a terminal status, oldest first.
+ *
+ * Recovery reads them in the order they started so a group's agents are
+ * considered before whatever else came later.
+ */
+export function listRecoverableRuns(db: Db): Run[] {
+  const rows = db
+    .query(
+      `SELECT ${COLUMNS} FROM runs WHERE status IN ('pending', 'running')
+       ORDER BY started_at ASC, id ASC`,
+    )
+    .all();
+  return parseRows(RunSchema, "runs", rows);
+}
+
+/** Non-terminal runs still pointing at one OpenCode server. */
+export function listRunsOnServer(db: Db, serverUrl: string): Run[] {
+  const rows = db
+    .query(
+      `SELECT ${COLUMNS} FROM runs WHERE server_url = ? AND status IN ('pending', 'running')
+       ORDER BY started_at ASC, id ASC`,
+    )
+    .all(serverUrl);
+  return parseRows(RunSchema, "runs", rows);
+}
+
 export interface UpdateRunInput {
   status?: RunStatus;
   verdict?: Verdict | null;
@@ -115,6 +143,11 @@ export interface UpdateRunInput {
   exitCode?: number | null;
   opencodeSessionId?: string | null;
   cancelRequestedAt?: string | null;
+  ownerPid?: number | null;
+  ownerHost?: string | null;
+  ownerNonce?: string | null;
+  heartbeatAt?: string | null;
+  serverUrl?: string | null;
 }
 
 export function updateRun(db: Db, id: string, patch: UpdateRunInput): Run {
@@ -130,6 +163,11 @@ export function updateRun(db: Db, id: string, patch: UpdateRunInput): Run {
   if (patch.exitCode !== undefined) set("exit_code", patch.exitCode);
   if (patch.opencodeSessionId !== undefined) set("opencode_session_id", patch.opencodeSessionId);
   if (patch.cancelRequestedAt !== undefined) set("cancel_requested_at", patch.cancelRequestedAt);
+  if (patch.ownerPid !== undefined) set("owner_pid", patch.ownerPid);
+  if (patch.ownerHost !== undefined) set("owner_host", patch.ownerHost);
+  if (patch.ownerNonce !== undefined) set("owner_nonce", patch.ownerNonce);
+  if (patch.heartbeatAt !== undefined) set("heartbeat_at", patch.heartbeatAt);
+  if (patch.serverUrl !== undefined) set("server_url", patch.serverUrl);
   if (sets.length === 0) return getRun(db, id);
   getRun(db, id); // 404s before a silent no-op UPDATE
   db.query(`UPDATE runs SET ${sets.join(", ")} WHERE id = ?`).run(...values, id);
@@ -144,6 +182,34 @@ export function requestCancel(db: Db, id: string): Run {
   const run = getRun(db, id);
   if (run.cancel_requested_at !== null) return run;
   return updateRun(db, id, { cancelRequestedAt: nowIso() });
+}
+
+export interface ClaimInput {
+  pid: number;
+  host: string;
+  nonce: string;
+  serverUrl: string | null;
+}
+
+/**
+ * Records which process is driving a run, and beats for the first time.
+ *
+ * Claiming is how a later process can tell a live run from an abandoned one,
+ * and it is re-issued on recovery: the recovering process becomes the owner.
+ */
+export function claimRun(db: Db, id: string, input: ClaimInput): Run {
+  return updateRun(db, id, {
+    ownerPid: input.pid,
+    ownerHost: input.host,
+    ownerNonce: input.nonce,
+    serverUrl: input.serverUrl,
+    heartbeatAt: nowIso(),
+  });
+}
+
+/** One sign of life from the owner. Deliberately the cheapest write we have. */
+export function heartbeat(db: Db, id: string): void {
+  db.query("UPDATE runs SET heartbeat_at = ? WHERE id = ?").run(nowIso(), id);
 }
 
 /** Run counts by status, for the home view. Statuses with no runs are omitted. */

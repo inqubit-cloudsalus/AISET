@@ -30,6 +30,8 @@ export interface MappedArtifact {
 }
 
 export interface MappedUsage {
+  /** The assistant message it was reported on, so it is counted exactly once. */
+  messageId: string;
   provider: string | null;
   model: string | null;
   inputTokens: number;

@@ -72,6 +72,16 @@ export interface UsageTotalsModel {
   costUsd: number;
 }
 
+/** The process driving a run, as far as the database knows. */
+export interface OwnerModel {
+  pid: number | null;
+  host: string | null;
+  heartbeatAt: string | null;
+  /** No sign of life for long enough that the run counts as abandoned. */
+  stale: boolean;
+  serverUrl: string | null;
+}
+
 export interface RunDetailModel {
   run: RunRow;
   engine: string;
@@ -82,6 +92,8 @@ export interface RunDetailModel {
   exitCode: number | null;
   workdir: string | null;
   parentRunId: string | null;
+  /** Null when nothing ever claimed the run — every row written before recovery. */
+  owner: OwnerModel | null;
   /** Runs launched under this one — the agents of a multi-agent group. */
   children: RunRow[];
   events: EventRow[];
@@ -103,6 +115,20 @@ export interface RunCancelModel {
   owner: "local" | "remote" | "none";
   /** False when the owning process never confirmed the stop within the grace. */
   confirmed: boolean;
+}
+
+export interface RecoverEntryModel {
+  displayId: string;
+  action: "reattached" | "closed" | "skipped";
+  tone: StatusTone;
+  reason: string;
+}
+
+/** The outcome of `aiset recover`: what was found, and what was done about it. */
+export interface RecoverModel {
+  entries: RecoverEntryModel[];
+  /** Nothing was written; the entries are what would have happened. */
+  dryRun: boolean;
 }
 
 export interface MigrationRow {
