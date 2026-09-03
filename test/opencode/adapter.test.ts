@@ -7,6 +7,9 @@ import type { OpenCodeEvent } from "../../src/opencode/types.ts";
 import { freshDb } from "../db/helpers.ts";
 import { fixtureEvents, ROOT_SESSION } from "./fixture.ts";
 
+/** What OpenCode's client reports when the engine it was streaming from dies. */
+const SOCKET_CLOSED = "The socket connection was closed unexpectedly";
+
 /**
  * Replays a recorded transcript in place of a live `opencode serve`. No test in
  * this suite spawns a process or opens a socket.
@@ -22,6 +25,11 @@ class FakeApi implements OpenCodeApi {
     private readonly hang = false,
     /** Answers an abort with a root session error, the way OpenCode itself does. */
     private readonly errorOnAbort = false,
+    /**
+     * Yields this many events and then throws, the way the client surfaces a
+     * dying `opencode serve`. `null` means the stream never breaks.
+     */
+    private readonly throwAfter: number | null = null,
   ) {}
 
   /** Events the engine emits in reaction to something we asked of it. */
@@ -52,10 +60,14 @@ class FakeApi implements OpenCodeApi {
   }
 
   async *events(signal: AbortSignal): AsyncIterable<OpenCodeEvent> {
+    let sent = 0;
     for (const ev of this.script) {
       if (signal.aborted) return;
+      if (this.throwAfter !== null && sent === this.throwAfter) throw new Error(SOCKET_CLOSED);
       yield ev;
+      sent += 1;
     }
+    if (this.throwAfter !== null) throw new Error(SOCKET_CLOSED);
     while (this.hang && !signal.aborted) {
       const queued = this.pending.shift();
       if (queued) {
@@ -79,10 +91,10 @@ function transportFor(api: FakeApi) {
 }
 
 async function runFixture(
-  opts: { hang?: boolean; timeoutMs?: number; cancelPollMs?: number } = {},
+  opts: { hang?: boolean; timeoutMs?: number; cancelPollMs?: number; throwAfter?: number } = {},
 ) {
   const db = freshDb();
-  const api = new FakeApi(fixtureEvents(), opts.hang ?? false);
+  const api = new FakeApi(fixtureEvents(), opts.hang ?? false, false, opts.throwAfter ?? null);
   const handle = await start(
     db,
     { prompt: "write sum.ts and a test for it", agent: "build", model: "openrouter/haiku" },
@@ -320,6 +332,78 @@ describe("adapter lifecycle: kill and timeout", () => {
     expect(run?.opencode_session_id).toBeNull();
 
     const all = await collect(db, run!.id);
+    expect(all.filter((e) => e.type === "end").length).toBe(1);
+    expect(all.some((e) => e.type === "stderr")).toBe(true);
+    db.close();
+  });
+});
+
+/**
+ * Issue #9's core experiment, as a test: `opencode serve` is killed while Bun
+ * keeps running. The engine dies one event short of finishing, so everything it
+ * had already produced is on the record and only the verdict is missing.
+ * `docs/MILESTONE-1-FINDINGS.md` records the live version of this.
+ */
+describe("the engine dies mid-run", () => {
+  /** One event short of the transcript's `session.idle`, i.e. the whole run bar its ending. */
+  const CUT = fixtureEvents().length - 1;
+
+  test("the run closes itself as failed, with nobody asked to intervene", async () => {
+    const { db, handle } = await runFixture({ throwAfter: CUT });
+    const run = await handle.finished;
+
+    expect(run.status).toBe("failed");
+    expect(run.exit_code).toBe(1);
+    expect(run.ended_at).not.toBeNull();
+    db.close();
+  });
+
+  test("the reason the engine gave is the last thing said before the end", async () => {
+    const { db, handle } = await runFixture({ throwAfter: CUT });
+    await handle.finished;
+
+    const all = await collect(db, handle.runId);
+    expect(all.filter((e) => e.type === "end").length).toBe(1);
+    expect(all.at(-1)?.type).toBe("end");
+    const stderr = all.at(-2);
+    expect(stderr?.type).toBe("stderr");
+    expect(stderr?.message).toBe(SOCKET_CLOSED);
+    db.close();
+  });
+
+  test("everything the agent did before the kill is still on the record", async () => {
+    const { db, handle } = await runFixture({ throwAfter: CUT });
+    await handle.finished;
+
+    // The claim the milestone rests on: SQLite alone tells you what the agent
+    // was doing and how far it got.
+    const all = await collect(db, handle.runId);
+    expect(all.map((e) => e.seq)).toEqual(all.map((_, i) => i + 1));
+    expect(all.filter((e) => e.type === "tool").length).toBeGreaterThan(0);
+
+    const result = capture(db, handle.runId);
+    expect(result.artifacts.length).toBe(2);
+    expect(result.totals.outputTokens).toBeGreaterThan(0);
+    expect(result.totals.costUsd).toBeGreaterThan(0);
+
+    const agents = new Set(all.map((e) => e.agent));
+    expect(agents.has("build")).toBe(true);
+    db.close();
+  });
+
+  test("the dead server is released exactly once, so nothing is left holding it", async () => {
+    const { db, api, handle } = await runFixture({ throwAfter: CUT });
+    await handle.finished;
+    expect(api.stopped).toBe(1);
+    db.close();
+  });
+
+  test("an engine that dies before saying anything still closes the run", async () => {
+    const { db, handle } = await runFixture({ throwAfter: 0 });
+    const run = await handle.finished;
+
+    expect(run.status).toBe("failed");
+    const all = await collect(db, handle.runId);
     expect(all.filter((e) => e.type === "end").length).toBe(1);
     expect(all.some((e) => e.type === "stderr")).toBe(true);
     db.close();

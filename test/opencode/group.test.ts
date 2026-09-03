@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { listEvents } from "../../src/db/repositories/events.ts";
 import { getRun, listChildRuns, requestCancel } from "../../src/db/repositories/runs.ts";
 import { cancel } from "../../src/opencode/adapter.ts";
 import type { CreateSessionInput, OpenCodeApi, PromptInput } from "../../src/opencode/client.ts";
@@ -12,6 +13,9 @@ import {
 import type { OpenCodeEvent } from "../../src/opencode/types.ts";
 import { freshDb } from "../db/helpers.ts";
 
+/** What OpenCode's client reports when the engine it was streaming from dies. */
+const SOCKET_CLOSED = "The socket connection was closed unexpectedly";
+
 /**
  * One agent's session on the shared server. Each child gets its own instance,
  * as each gets its own session; no test here spawns a process or opens a socket.
@@ -22,8 +26,11 @@ class AgentApi implements OpenCodeApi {
 
   constructor(
     readonly sessionId: string,
-    /** "idle" succeeds, "error" fails, "hang" waits to be cancelled. */
-    private readonly ending: "idle" | "error" | "hang",
+    /**
+     * "idle" succeeds, "error" fails, "hang" waits to be cancelled, and "dead"
+     * loses its stream the way a killed `opencode serve` does.
+     */
+    private readonly ending: "idle" | "error" | "hang" | "dead",
   ) {}
 
   createSession(_input: CreateSessionInput): Promise<string> {
@@ -65,11 +72,12 @@ class AgentApi implements OpenCodeApi {
       } as OpenCodeEvent;
       return;
     }
+    if (this.ending === "dead") throw new Error(SOCKET_CLOSED);
     while (!signal.aborted) await Bun.sleep(5);
   }
 }
 
-function team(endings: ("idle" | "error" | "hang")[]) {
+function team(endings: ("idle" | "error" | "hang" | "dead")[]) {
   const apis = endings.map((ending, i) => new AgentApi(`ses_${i}`, ending));
   const tasks: GroupTask[] = endings.map((_, i) => ({
     prompt: `task ${i}`,
@@ -212,5 +220,65 @@ describe("startGroup guards", () => {
   test("a group needs at least one task", async () => {
     const db = freshDb();
     await expect(startGroup(db, [])).rejects.toThrow("at least one task");
+  });
+});
+
+/**
+ * Issue #9 at team scale: the four agents share one `opencode serve`, so killing
+ * it takes every stream down at once. Bun is still alive, and nothing here calls
+ * `recover` — the point is that no one has to.
+ */
+describe("the shared engine dies under a whole team", () => {
+  test("every agent closes failed and the group rolls up on its own", async () => {
+    const db = freshDb();
+    const { tasks, transportFor } = team(["dead", "dead", "dead", "dead"]);
+
+    const handle = await startGroup(db, tasks, { transportFor, cancelPollMs: 20 });
+    const parent = await handle.finished;
+
+    expect(parent.status).toBe("failed");
+    expect(parent.exit_code).toBe(1);
+    expect(parent.ended_at).not.toBeNull();
+
+    const children = listChildRuns(db, handle.parentRunId);
+    expect(children).toHaveLength(4);
+    expect(children.every((c) => c.status === "failed")).toBe(true);
+    db.close();
+  });
+
+  test("each agent keeps its own timeline and its own reason for ending", async () => {
+    const db = freshDb();
+    const { tasks, transportFor } = team(["dead", "dead"]);
+    const handle = await startGroup(db, tasks, { transportFor, cancelPollMs: 20 });
+    await handle.finished;
+
+    for (const child of listChildRuns(db, handle.parentRunId)) {
+      const events = listEvents(db, child.id);
+      // What it was doing when the engine went, then why it stopped.
+      expect(events.filter((e) => e.type === "tool").length).toBe(1);
+      const stderr = events.filter((e) => e.type === "stderr");
+      expect(stderr).toHaveLength(1);
+      expect(stderr[0]?.message).toBe(SOCKET_CLOSED);
+      expect(events.filter((e) => e.type === "end")).toHaveLength(1);
+      // Which agent this timeline belongs to.
+      expect((child.meta as { agent?: string } | null)?.agent).toMatch(/^agent-[0-9]$/);
+    }
+    db.close();
+  });
+
+  test("an agent that had already finished keeps its success", async () => {
+    const db = freshDb();
+    // A team caught mid-flight: one agent was done before the kill, two were not.
+    const { tasks, transportFor } = team(["idle", "dead", "dead"]);
+    const handle = await startGroup(db, tasks, { transportFor, cancelPollMs: 20 });
+    const parent = await handle.finished;
+
+    expect(listChildRuns(db, handle.parentRunId).map((c) => c.status)).toEqual([
+      "succeeded",
+      "failed",
+      "failed",
+    ]);
+    expect(parent.status).toBe("failed");
+    db.close();
   });
 });

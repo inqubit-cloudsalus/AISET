@@ -94,6 +94,40 @@ describe("server pool", () => {
     await second.release();
   });
 
+  /**
+   * Test-plan step 3E: the engine was killed under a whole team, every agent
+   * released its lease on the way out, and the surviving Bun process launches
+   * again. A stale entry here would hand the next team a dead server.
+   */
+  test("a team whose engine died leaves no stale server for the next launch", async () => {
+    let starts = 0;
+    const dead = fakeServer("http://127.0.0.1:4200");
+    // Stopping a process that is already gone throws; the pool must not let
+    // that keep the entry alive.
+    dead.stop = () => Promise.reject(new Error("no such process"));
+    const fresh = fakeServer("http://127.0.0.1:4201");
+    const startFn = async () => {
+      starts += 1;
+      return starts === 1 ? dead : fresh;
+    };
+
+    const team = await Promise.all([
+      lease(OPTS, { startFn }),
+      lease(OPTS, { startFn }),
+      lease(OPTS, { startFn }),
+    ]);
+    expect(starts).toBe(1);
+
+    // Every agent finalizes failed and releases, as the adapter does on a lost stream.
+    for (const held of team) await held.release().catch(() => {});
+    expect(leasedServers()).toBe(0);
+
+    const next = await lease(OPTS, { startFn });
+    expect(starts).toBe(2);
+    expect(next.url).toBe("http://127.0.0.1:4201");
+    await next.release();
+  });
+
   test("stopAll closes what is still held", async () => {
     const server = fakeServer("http://127.0.0.1:4099");
     await lease(OPTS, { startFn: () => Promise.resolve(server) });
