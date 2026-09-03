@@ -1,7 +1,8 @@
+import { listOpenRouterModels } from "../ai/openrouter-models.ts";
 import { collectChecks } from "../cli/commands/doctor.ts";
 import { toRecoverModel } from "../cli/commands/recover.ts";
 import { seedDemoRun } from "../cli/commands/seed.ts";
-import { readConfig } from "../core/config.ts";
+import { readConfig, updateConfig } from "../core/config.ts";
 import { displayRunId, normalizeRunId } from "../core/ids.ts";
 import { isCurrent, migrationStatus } from "../db/migrate.ts";
 import { listArtifacts, listArtifactsWithChildren } from "../db/repositories/artifacts.ts";
@@ -477,6 +478,88 @@ const recoverRuns: SlashCommand = {
   },
 };
 
+/**
+ * OpenCode wants `provider/model`, and `splitModel` splits on the first slash —
+ * so an OpenRouter id (`anthropic/claude-sonnet-4.5`, itself containing a slash)
+ * has to be prefixed rather than used raw.
+ */
+export function normalizeModelId(raw: string): string | null {
+  const value = raw.trim();
+  if (value === "" || value.includes(" ")) return null;
+  const prefixed = value.startsWith("openrouter/") ? value : `openrouter/${value}`;
+  const rest = prefixed.slice("openrouter/".length);
+  // `vendor/model`: anything less is not an OpenRouter id.
+  return rest.includes("/") && !rest.startsWith("/") && !rest.endsWith("/") ? prefixed : null;
+}
+
+const model: SlashCommand = {
+  name: "model",
+  summary: "show, list or set the OpenRouter model used for runs",
+  usage: "/model [<id>] [--list] [--reset]",
+  async run(session, args) {
+    const { flags, positional } = parseFlags(args);
+    const { symbols } = session.theme;
+    const root = session.ctx.paths.root;
+
+    if (flags.has("reset")) {
+      await updateConfig(
+        (config) => ({ ...config, opencode: { ...config.opencode, model: undefined } }),
+        root,
+      );
+      return output(`${symbols.ok} model cleared — runs fall back to OpenCode's own default`);
+    }
+
+    if (flags.has("list")) {
+      const catalogue = await listOpenRouterModels();
+      const current = (await readConfig(root))?.opencode.model ?? null;
+      const lines = catalogue.models.map((entry) => {
+        const mark = current === `openrouter/${entry.id}` ? symbols.cursor : " ";
+        const ctx = entry.contextLength ? `${Math.round(entry.contextLength / 1000)}k ctx` : "—";
+        return `${mark} ${entry.id}  ${symbols.bullet}  ${entry.name}  ${symbols.bullet}  ${ctx}`;
+      });
+      lines.push(
+        `${catalogue.models.length} model(s) ${symbols.bullet} source=${catalogue.source}${
+          catalogue.reason ? ` (${catalogue.reason})` : ""
+        }`,
+      );
+      return output(lines.join("\n"));
+    }
+
+    const requested = positional.join(" ").trim();
+    if (requested === "") {
+      const current = (await readConfig(root))?.opencode.model ?? null;
+      return output(
+        [
+          `${symbols.accent} model: ${current ?? "unset — OpenCode's own default"}`,
+          `${symbols.cursor} /model <id> to set  ${symbols.bullet}  /model --list to browse  ${symbols.bullet}  /model alone opens the picker in the TUI`,
+        ].join("\n"),
+      );
+    }
+
+    const normalized = normalizeModelId(requested);
+    if (!normalized) {
+      return failure(
+        `model: not an OpenRouter id: ${requested}\nexpected vendor/model, e.g. anthropic/claude-sonnet-4.5`,
+      );
+    }
+
+    await updateConfig(
+      (config) => ({ ...config, opencode: { ...config.opencode, model: normalized } }),
+      root,
+    );
+
+    const catalogue = await listOpenRouterModels();
+    const known = catalogue.models.some((entry) => `openrouter/${entry.id}` === normalized);
+    const lines = [`${symbols.ok} model set to ${normalized} — used by the next run`];
+    if (!known) {
+      lines.push(
+        `${symbols.warn} not in the ${catalogue.source} catalogue — OpenCode will reject it if the id is wrong`,
+      );
+    }
+    return output(lines.join("\n"));
+  },
+};
+
 const clear: SlashCommand = {
   name: "clear",
   summary: "clear the transcript",
@@ -506,6 +589,7 @@ export const COMMANDS: SlashCommand[] = [
   cancelRun,
   recoverRuns,
   doctor,
+  model,
   seed,
   clear,
   exit,

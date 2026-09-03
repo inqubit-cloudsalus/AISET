@@ -34,7 +34,7 @@ export const DEFAULT_MODEL: Record<ProviderName, string> = {
 };
 
 /** OpenRouter speaks the OpenAI wire protocol, so it rides the OpenAI client. */
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /** First non-empty key among the provider's env var and its aliases. */
 function readApiKey(provider: ProviderName): string | undefined {

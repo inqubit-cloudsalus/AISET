@@ -9,6 +9,7 @@ import {
 } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readConfig } from "../../core/config.ts";
 import { orphanNotice } from "../../opencode/recover.ts";
 import { dispatch } from "../../shell/commands.ts";
 import { promptCompletions } from "../../shell/prompt-state.ts";
@@ -16,6 +17,7 @@ import { shellHeader } from "../../shell/session.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
 import { copyText } from "../clipboard.ts";
 import { colors, formatTimestamp } from "../theme.ts";
+import { ModelPicker } from "./ModelPicker.tsx";
 
 interface ShellViewProps {
   session: Session;
@@ -263,6 +265,8 @@ export function ShellView({ session }: ShellViewProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [following, setFollowing] = useState(true);
   const [notice, setNotice] = useState("drag to select · release to copy");
+  const [picker, setPicker] = useState(false);
+  const [pickerCurrent, setPickerCurrent] = useState<string | null>(null);
   const [header, setHeader] = useState(() => shellHeader(session));
 
   const narrow = dimensions.width < 86;
@@ -325,10 +329,25 @@ export function ShellView({ session }: ShellViewProps) {
     setBlocks((current) => [...current, ...next]);
   }, []);
 
+  const openPicker = useCallback(() => {
+    setValue("");
+    setInputValue(inputRef.current, "");
+    void readConfig(session.ctx.paths.root)
+      .catch(() => null)
+      .then((config) => setPickerCurrent(config?.opencode.model ?? null));
+    setPicker(true);
+  }, [session]);
+
   const submit = useCallback(
     (raw: string) => {
       const line = raw.trim();
       if (!line) return;
+      // Bare `/model` is the one command with an interactive form; with an
+      // argument it stays a plain command so scripts and tests behave alike.
+      if (line === "/model") {
+        openPicker();
+        return;
+      }
       if (history.current.at(-1) !== line) history.current.push(line);
       historyIndex.current = null;
       draft.current = "";
@@ -356,7 +375,7 @@ export function ShellView({ session }: ShellViewProps) {
           if (pending.current === 0) setBusy(false);
         });
     },
-    [append, renderer, session, toBottom],
+    [append, openPicker, renderer, session, toBottom],
   );
 
   const copySelection = useCallback(async () => {
@@ -408,6 +427,16 @@ export function ShellView({ session }: ShellViewProps) {
   }, [completions, value]);
 
   useKeyboard((key) => {
+    // While the picker is mounted it owns the keyboard: the prompt's history,
+    // completion and scroll bindings would otherwise fight its own.
+    if (picker) {
+      if (key.ctrl && key.name === "c") {
+        setPicker(false);
+        key.preventDefault();
+        key.stopPropagation();
+      }
+      return;
+    }
     const selection = renderer.getSelection()?.getSelectedText();
     if (key.ctrl && key.name === "c") {
       key.preventDefault();
@@ -637,6 +666,17 @@ export function ShellView({ session }: ShellViewProps) {
         </text>
       </box>
 
+      {picker && (
+        <ModelPicker
+          current={pickerCurrent}
+          onCancel={() => setPicker(false)}
+          onPick={(id) => {
+            setPicker(false);
+            submit(`/model ${id}`);
+          }}
+        />
+      )}
+
       <box
         style={{
           minHeight: 3,
@@ -659,7 +699,7 @@ export function ShellView({ session }: ShellViewProps) {
           </text>
           <input
             ref={inputRef}
-            focused
+            focused={!picker}
             value={value}
             placeholder="Type /help or /launch <prompt>"
             onInput={setValue}

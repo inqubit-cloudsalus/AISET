@@ -1,12 +1,23 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { seedDemoRun } from "../../src/cli/commands/seed.ts";
 import type { Context } from "../../src/cli/context.ts";
+import { defaultConfig, readConfig, writeConfigIfAbsent } from "../../src/core/config.ts";
 import { displayRunId } from "../../src/core/ids.ts";
 import { resolvePaths } from "../../src/core/paths.ts";
 import { createRun, getRun } from "../../src/db/repositories/runs.ts";
-import { COMMANDS, dispatch, findCommand, parseTasks } from "../../src/shell/commands.ts";
+import {
+  COMMANDS,
+  dispatch,
+  findCommand,
+  normalizeModelId,
+  parseTasks,
+} from "../../src/shell/commands.ts";
 import type { Session, ShellBlock } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
+import { goOffline } from "../ai/offline.ts";
 import { freshDb } from "../db/helpers.ts";
 
 /** ANSI escapes must never reach a shell block: every command renders plain text. */
@@ -356,6 +367,98 @@ describe("/recover", () => {
     expect(blocks[0]!.text).toContain("closed");
     expect(getRun(session.db, run.id).status).toBe("killed");
     expect(getRun(session.db, run.id).exit_code).toBe(130);
+    session.db.close();
+  });
+});
+
+describe("/model", () => {
+  // The catalogue is only ever the offline fallback here: no test hits the network.
+  let restoreEnv: () => void = () => {};
+  beforeEach(() => {
+    restoreEnv = goOffline();
+  });
+  afterEach(() => restoreEnv());
+
+  /** A session rooted in a throwaway directory so config.json can be written. */
+  async function makeConfiguredSession(): Promise<{ session: Session; root: string }> {
+    const root = await mkdtemp(join(tmpdir(), "aiset-model-"));
+    await writeConfigIfAbsent(defaultConfig("model-test"), root);
+    const session = makeSession();
+    return { session: { ...session, ctx: { ...session.ctx, paths: resolvePaths(root) } }, root };
+  }
+
+  test("normalizeModelId prefixes a bare id and rejects a non-id", () => {
+    expect(normalizeModelId("anthropic/claude-sonnet-4.5")).toBe(
+      "openrouter/anthropic/claude-sonnet-4.5",
+    );
+    expect(normalizeModelId("openrouter/anthropic/claude-sonnet-4.5")).toBe(
+      "openrouter/anthropic/claude-sonnet-4.5",
+    );
+    expect(normalizeModelId("gpt-5")).toBeNull();
+    expect(normalizeModelId("")).toBeNull();
+    expect(normalizeModelId("vendor/")).toBeNull();
+  });
+
+  test("reports the current model and then sets one, persisting it to config.json", async () => {
+    const { session, root } = await makeConfiguredSession();
+
+    const before = (await dispatch(session, "/model")).blocks[0]!;
+    expect(before.kind).toBe("output");
+    expect(before.text).toContain("unset");
+    expect(hasAnsi(before.text)).toBe(false);
+
+    const set = (await dispatch(session, "/model anthropic/claude-sonnet-4.5")).blocks[0]!;
+    expect(set.kind).toBe("output");
+    expect(set.text).toContain("openrouter/anthropic/claude-sonnet-4.5");
+    expect(hasAnsi(set.text)).toBe(false);
+
+    expect((await readConfig(root))?.opencode.model).toBe("openrouter/anthropic/claude-sonnet-4.5");
+
+    const after = (await dispatch(session, "/model")).blocks[0]!;
+    expect(after.text).toContain("openrouter/anthropic/claude-sonnet-4.5");
+
+    await rm(root, { recursive: true, force: true });
+    session.db.close();
+  });
+
+  test("--reset clears the model and --list prints the catalogue", async () => {
+    const { session, root } = await makeConfiguredSession();
+    await dispatch(session, "/model anthropic/claude-sonnet-4.5");
+
+    const reset = (await dispatch(session, "/model --reset")).blocks[0]!;
+    expect(reset.kind).toBe("output");
+    expect((await readConfig(root))?.opencode.model).toBeUndefined();
+
+    const listed = (await dispatch(session, "/model --list")).blocks[0]!;
+    expect(listed.kind).toBe("output");
+    expect(listed.text).toContain("anthropic/claude-sonnet-4.5");
+    expect(listed.text).toContain("source=");
+    expect(hasAnsi(listed.text)).toBe(false);
+
+    await rm(root, { recursive: true, force: true });
+    session.db.close();
+  });
+
+  test("rejects an id that is not vendor/model and leaves config untouched", async () => {
+    const { session, root } = await makeConfiguredSession();
+    const { blocks } = await dispatch(session, "/model gpt-5");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("vendor/model");
+    expect((await readConfig(root))?.opencode.model).toBeUndefined();
+
+    await rm(root, { recursive: true, force: true });
+    session.db.close();
+  });
+
+  test("fails with a hint when the directory has no config.json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiset-noconfig-"));
+    const base = makeSession();
+    const session: Session = { ...base, ctx: { ...base.ctx, paths: resolvePaths(root) } };
+    const { blocks } = await dispatch(session, "/model anthropic/claude-sonnet-4.5");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("config.json");
+
+    await rm(root, { recursive: true, force: true });
     session.db.close();
   });
 });

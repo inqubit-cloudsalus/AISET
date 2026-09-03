@@ -8,6 +8,7 @@ import { resolvePaths } from "../../src/core/paths.ts";
 import type { Session } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
 import { ShellView } from "../../src/ui/views/ShellView.tsx";
+import { goOffline } from "../ai/offline.ts";
 import { freshDb } from "../db/helpers.ts";
 
 let renderer: CliRenderer | undefined;
@@ -76,5 +77,56 @@ describe("OpenTUI shell", () => {
     expect(frame).not.toContain("Bottom ctrl+end");
     expect(frame).toContain("Type /help or /launch <prompt>");
     expect(frame).toContain("Welcome to AISET");
+  });
+});
+
+describe("model picker", () => {
+  test("bare /model opens the picker, and escape closes it without dispatching", async () => {
+    const restore = goOffline();
+    try {
+      const setup = await mount(110, 34);
+      await act(async () => {
+        await setup.mockInput.typeText("/model");
+        setup.mockInput.pressEnter();
+      });
+
+      const opened = await setup.waitForFrame((value) => value.includes("select model"));
+      expect(opened).toContain("anthropic/claude-sonnet-4.5");
+      expect(opened).toContain("esc cancel");
+
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      const closed = await setup.waitForFrame((value) => !value.includes("select model"));
+      expect(closed).toContain("Type /help or /launch <prompt>");
+    } finally {
+      restore();
+    }
+  });
+
+  test("choosing a row routes the pick back through /model", async () => {
+    const restore = goOffline();
+    try {
+      const setup = await mount(110, 34);
+      await act(async () => {
+        await setup.mockInput.typeText("/model");
+        setup.mockInput.pressEnter();
+      });
+      await setup.waitForFrame((value) => value.includes("select model"));
+
+      await act(async () => {
+        setup.mockInput.pressArrow("down");
+      });
+      await act(async () => {
+        setup.mockInput.pressEnter();
+      });
+
+      // The test root has no .aiset/config.json, so the write fails loudly —
+      // which is exactly the proof that the pick reached the real command.
+      const frame = await setup.waitForFrame((value) => value.includes("config.json"));
+      expect(frame).toContain("/model anthropic/claude-opus-4.1");
+    } finally {
+      restore();
+    }
   });
 });
