@@ -20,8 +20,16 @@ Procedure: [`MILESTONE-1-TEST-PLAN.md`](./MILESTONE-1-TEST-PLAN.md).
 | 3C | **Kill OpenCode, Bun alive** | **PASS** — all 5 runs self-closed in ≤1s |
 | 3E | Relaunch after the engine died | **PASS** — fresh engine in 1.7s, group succeeded |
 | 3F | Do sessions survive the engine? | **PASS** (sessions) / **NO** (the in-flight turn) |
+| 6 | Can a killed turn be *continued* with a new prompt? | **PASS** — 2/2 sessions, work finished, checks pass |
 
 Baseline at the same commit: `typecheck` clean, `bun test` 180 pass, `bun run smoke` 44 checks.
+
+**Since written up**, the #9 path is covered by tests rather than by this one observation:
+a stream that breaks mid-flight closing the run `failed`/1 unaided with its state intact
+(`test/opencode/adapter.test.ts`), a whole team's shared engine dying and the group rolling
+up on its own (`test/opencode/group.test.ts`), and no stale pooled server left for the next
+launch (`test/opencode/pool.test.ts`). `bun test` is now **189 pass**. #7 was already covered
+by the 20 tests in `recover.test.ts` and `ownership.test.ts`.
 
 ---
 
@@ -112,6 +120,8 @@ No stale pooled server.
 
 ### What does not survive: the interrupted turn
 
+*(See §6 — the turn does not resume, but the work behind it can be continued.)*
+
 A server restarted after the kill still knows every session. But the last assistant message
 of a killed session reads:
 
@@ -159,10 +169,75 @@ never stuck. The surviving process relaunches cleanly, and nothing is left spend
 meets the milestone's GREEN wording — *"recover/control the run"* — and the deliverable's
 *"or reliably marked failed"*.
 
-**Resuming an interrupted turn is not possible**, and would need an OpenCode-side mechanism —
-which is precisely the milestone's AMBER wording, *"requires a small OpenCode plugin or
-additional persistence mechanism"*. A reviewer who reads GREEN as requiring **resume** should
-record this as **AMBER**.
+**The interrupted turn itself does not resume** — OpenCode will not pick it up, and nothing in
+AISET can make it. But §6 shows the work behind it is not lost: prompting the killed session
+with *"continue where you stopped"* had both agents correctly recall what they had written and
+which step they were on, then finish the job with their checks passing. That needed no OpenCode
+plugin and no additional persistence — only AISET code that has not been written yet.
 
-The recommendation is GREEN on the question as written, with the resume limitation stated
-plainly rather than averaged away. **The colour is the human's to set.**
+So the milestone's AMBER wording, *"requires a small OpenCode plugin or additional persistence
+mechanism"*, does not describe the remaining gap. **GREEN** on the question as written, and on
+the stricter reading too: the state recovers, and so does the work.
+
+## 6. Follow-up (2026-09-03): a killed turn *can* be continued
+
+Section 3 says the interrupted turn does not survive. That is still true — OpenCode does not
+resume it, and the dangling assistant message stays dangling. But "the turn cannot resume
+itself" turned out not to mean "the work is lost", and the difference decides the colour, so
+it was worth testing.
+
+**Method.** No new crash was staged. The four sessions from the 2026-09-02 kill are still in
+`~/.local/share/opencode/opencode.db`, so a server was started by hand on port 4141 and the
+killed sessions were prompted directly with `curl`. No AISET code ran; the `failed` rows in
+`.aiset/aiset.db` were left untouched. A cleanly-finished session from the same day was
+prompted first as a control, to prove the setup and the credits before drawing conclusions.
+
+**What the killed session looked like going in** (`ses_f9d6422d8ffeYdysrtsEWSfqXm`, the
+`…M5PECX` slugify agent): 8 messages, the last one `completed:(none) finish:(none)` with
+**zero parts** — created at the instant of the kill, cost 0, tokens 0. Its six working
+messages carried `reasoning` parts, which is what made the `400 Corrupted thought signature`
+fault a real risk here. The transcript shows it had already written both `slugify.ts` and
+`slugify.check.ts` and was about to run the check when the engine died. Both files had since
+been deleted by the 2026-09-02 cleanup, so the agent's belief about the workspace was stale.
+
+**The prompt.** One message: *"You were interrupted partway through the task above. Review
+what you had already done and finish it. Do not start over — continue from where you stopped.
+Begin your reply by stating which files you had already written and which step you were on."*
+
+**What happened.** Accepted with `204`. No thought-signature error. Its first words:
+
+```
+I had already written multi-agent-ts-tests/slugify.ts and
+multi-agent-ts-tests/slugify.check.ts, and was on the final step to run
+bun run multi-agent-ts-tests/slugify.check.ts. Running the check now.
+```
+
+Exactly right, including the step it never got to. It then ran the check, found the files gone,
+re-created them, re-ran the check, and finished `finish: stop` with the assertions passing.
+
+**Repeated on a second session** (`ses_f9d6422cdffe3QxUN9f4AX38j4`, the `…M5PECY` chunk agent,
+6 messages) with the same prompt: same accurate recall of both files and the pending step,
+same completion, `bun run multi-agent-ts-tests/chunk.check.ts` → *All assertions passed*.
+
+| | Original turn | Continuation |
+|---|---|---|
+| `…M5PECX` slugify | $0.0336 | $0.0517 · 10 messages · 54,929 input tokens |
+| `…M5PECY` chunk | $0.0256 | $0.0515 · 10 messages · 56,179 input tokens |
+
+**What this changes.** Continuing costs roughly double the original turn, because the whole
+session replays as context. But nothing OpenCode-side was needed: no plugin, no extra
+persistence, no repair of the dangling message. OpenCode already keeps everything required.
+What is missing is AISET code that does not exist yet — find a live server for the workdir,
+confirm the session, create a follow-up run, send a continuation prompt. The schema already
+anticipates the shape: `parent_run_id` is commented *"recovery re-runs link to the original"*.
+
+So AMBER's wording — *"requires a small OpenCode plugin or additional persistence mechanism"* —
+does not describe this gap. Recovery of the **work**, not just the state, is reachable with
+ordinary work in our own codebase.
+
+**Caveats, stated plainly.** Two sessions is two data points, both `build` agents on
+`google/gemini-3.7-flash` via OpenRouter, both interrupted between tool calls rather than
+mid-write. An agent killed with a half-written file, or one whose last step had side effects,
+may not recover as cleanly — re-running is not always safe. And this was still a *new turn*:
+the model re-derived its position from the transcript rather than picking up a suspended one.
+That distinction matters for cost, not for outcome.
