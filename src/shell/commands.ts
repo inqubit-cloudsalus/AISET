@@ -1,8 +1,10 @@
 import { listOpenRouterModels } from "../ai/openrouter-models.ts";
+import { planTeam, type TeamPlan } from "../ai/planner.ts";
 import { collectChecks } from "../cli/commands/doctor.ts";
 import { toRecoverModel } from "../cli/commands/recover.ts";
 import { seedDemoRun } from "../cli/commands/seed.ts";
 import { readConfig, updateConfig } from "../core/config.ts";
+import { AisetError } from "../core/errors.ts";
 import { displayRunId, normalizeRunId } from "../core/ids.ts";
 import { isCurrent, migrationStatus } from "../db/migrate.ts";
 import { listArtifacts, listArtifactsWithChildren } from "../db/repositories/artifacts.ts";
@@ -20,7 +22,7 @@ import { tableCounts } from "../db/repositories/stats.ts";
 import { usageTotals, usageTotalsWithChildren } from "../db/repositories/usage.ts";
 import { RUN_STATUSES, type RunStatus } from "../db/types.ts";
 import { cancel, observe, start } from "../opencode/adapter.ts";
-import { type GroupTask, startGroup } from "../opencode/group.ts";
+import type { GroupTask } from "../opencode/group.ts";
 import { findOrphans, type Recovered, recover } from "../opencode/recover.ts";
 import { toArtifactRow, toEventRow, toOwner, toRunRow } from "../ui/mappers.ts";
 import type { DbStatusModel, RunCancelModel, RunDetailModel, RunListModel } from "../ui/models.ts";
@@ -34,7 +36,7 @@ import {
   plainRunList,
 } from "../ui/plain.ts";
 import { formatDuration, toneForVerdict } from "../ui/theme.ts";
-import { groupSummary, streamGroup } from "./multi-stream.ts";
+import { planSummary, planToTasks, runGroup } from "./team.ts";
 import { tokenize } from "./tokenize.ts";
 import type { Session, ShellEmit, ShellResult, SlashCommand } from "./types.ts";
 
@@ -349,13 +351,6 @@ const multiLaunch: SlashCommand = {
 
     const config = await readConfig();
     const oc = config?.opencode;
-    const { symbols } = session.theme;
-    const wait = shared.has("wait");
-
-    emit({
-      kind: "output",
-      text: `${symbols.accent} starting ${tasks.length} agents on one OpenCode server in ${session.ctx.paths.root}…`,
-    });
 
     const groupTasks: GroupTask[] = tasks.map((t) => ({
       prompt: t.prompt,
@@ -365,48 +360,58 @@ const multiLaunch: SlashCommand = {
       workdir: shared.get("workdir"),
     }));
 
-    let handle: Awaited<ReturnType<typeof startGroup>>;
+    return runGroup(session, groupTasks, emit, {
+      wait: shared.has("wait"),
+      bin: shared.get("bin"),
+      timeoutMs,
+      oc,
+      label: "multi-launch",
+    });
+  },
+};
+
+/**
+ * Plans a team from one sentence and launches it.
+ *
+ * The plan is a model call, so it is the one command that can spend money
+ * before OpenCode is even contacted; `--dry-run` is the way to look first.
+ */
+const team: SlashCommand = {
+  name: "team",
+  summary: "plan a team of agents from a plain-English request, then launch it",
+  usage: "/team [--wait] [--dry-run] <request>",
+  async run(session, args, emit) {
+    const { flags, positional } = parseFlags(args);
+    const request = positional.join(" ").trim();
+    if (request === "") return failure("usage: /team <what you want built>");
+
+    const { symbols } = session.theme;
+    emit({ kind: "output", text: `${symbols.accent} planning a team for: ${request}` });
+
+    let plan: TeamPlan;
     try {
-      handle = await startGroup(session.db, groupTasks, {
-        bin: shared.get("bin") ?? oc?.bin,
-        hostname: oc?.hostname,
-        port: oc?.port,
-        timeoutMs: timeoutMs ?? oc?.timeoutMs ?? 600_000,
+      plan = await planTeam(request, {
+        model: session.plannerModel,
+        root: session.ctx.paths.root,
       });
     } catch (err) {
-      return failure(`multi-launch: ${err instanceof Error ? err.message : String(err)}`);
+      const hint = err instanceof AisetError && err.hint ? `\n${symbols.cursor} ${err.hint}` : "";
+      return failure(`team: ${err instanceof Error ? err.message : String(err)}${hint}`);
     }
 
-    const group = displayRunId(handle.parentRunId);
-    const header = [
-      `${symbols.ok} ${group} running ${handle.children.length} agents`,
-      ...handle.children.map(
-        (c) =>
-          `  ${c.error ? symbols.fail : symbols.bullet} ${(c.agent ?? "agent").padEnd(12)} ${displayRunId(c.runId)}${c.error ? ` — ${c.error}` : ""}`,
-      ),
-      `${symbols.cursor} /cancel ${group} stops the whole team ${symbols.bullet} /run ${group} inspects it`,
-    ].join("\n");
-
-    const summary = async (): Promise<ShellResult> => {
-      await streamGroup(session.db, handle.children, emit);
-      await handle.finished.catch(() => {});
-      const text = groupSummary(session.db, handle.parentRunId, handle.children, session.theme);
-      const run = findRun(session.db, handle.parentRunId);
-      return run?.status === "succeeded" ? output(text) : failure(text);
-    };
-
-    if (wait) {
-      emit({ kind: "output", text: header });
-      return summary();
+    const summary = planSummary(plan, session.theme);
+    if (flags.has("dry-run")) {
+      return output(`${summary}\n\n${symbols.cursor} nothing launched — drop --dry-run to run it`);
     }
+    emit({ kind: "output", text: summary });
 
-    // Detached by default: the prompt comes back while the team works, so the
-    // shell can still inspect and cancel them. The blocks keep arriving through
-    // `emit`, which the view appends wherever the transcript has got to.
-    void summary().then((result) => {
-      for (const block of result.blocks) emit(block);
+    const config = await readConfig(session.ctx.paths.root);
+    return runGroup(session, planToTasks(plan, config?.opencode), emit, {
+      wait: flags.has("wait"),
+      title: plan.title,
+      oc: config?.opencode,
+      label: "team",
     });
-    return output(header);
   },
 };
 
@@ -586,6 +591,7 @@ export const COMMANDS: SlashCommand[] = [
   runShow,
   launch,
   multiLaunch,
+  team,
   cancelRun,
   recoverRuns,
   doctor,
@@ -618,10 +624,13 @@ export async function dispatch(
   const trimmed = line.trim();
   if (trimmed === "") return { blocks: [], effect: "none" };
 
+  // Bare text is a request for work: AISET plans a team from it and runs that.
+  // Nothing is invented on the way — the plan is a model call whose output is
+  // shown before anything launches, and the TUI asks for approval first.
   if (!trimmed.startsWith("/")) {
-    return failure(
-      `not a command: ${trimmed}\nto run an agent use /launch <prompt> — type /help for the full list`,
-    );
+    // Passed whole rather than tokenized: a sentence is not an argument list,
+    // and a stray `--` in it is part of the request, not a flag.
+    return team.run(session, [trimmed], emit);
   }
 
   // Quote-aware: a command may take several prompts, and quoting is how a

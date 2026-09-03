@@ -3,12 +3,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CliRenderer } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
+import type { LanguageModel } from "ai";
 import { act } from "react";
 import { resolvePaths } from "../../src/core/paths.ts";
 import type { Session } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
 import { ShellView } from "../../src/ui/views/ShellView.tsx";
 import { goOffline } from "../ai/offline.ts";
+import { mockModel } from "../ai/planner.test.ts";
 import { freshDb } from "../db/helpers.ts";
 
 let renderer: CliRenderer | undefined;
@@ -23,8 +25,9 @@ afterEach(async () => {
   session = undefined;
 });
 
-async function mount(width = 100, height = 28) {
+async function mount(width = 100, height = 28, plannerModel?: LanguageModel) {
   session = {
+    plannerModel,
     ctx: {
       paths: resolvePaths("O:\\aiset-test"),
       json: false,
@@ -53,7 +56,7 @@ describe("OpenTUI shell", () => {
     expect(frame).toContain("DESIGN · BUILD · REVIEW · SHIP");
     expect(frame).toContain("connected");
     expect(frame).toContain("Welcome to AISET");
-    expect(frame).toContain("Type /help or /launch <prompt>");
+    expect(frame).toContain("Describe the work to plan a team");
     expect(frame).toContain("FOLLOWING");
   });
 
@@ -75,7 +78,7 @@ describe("OpenTUI shell", () => {
     const frame = setup.captureCharFrame();
 
     expect(frame).not.toContain("Bottom ctrl+end");
-    expect(frame).toContain("Type /help or /launch <prompt>");
+    expect(frame).toContain("Describe the work to plan a team");
     expect(frame).toContain("Welcome to AISET");
   });
 });
@@ -98,7 +101,7 @@ describe("model picker", () => {
         setup.mockInput.pressEscape();
       });
       const closed = await setup.waitForFrame((value) => !value.includes("select model"));
-      expect(closed).toContain("Type /help or /launch <prompt>");
+      expect(closed).toContain("Describe the work to plan a team");
     } finally {
       restore();
     }
@@ -128,5 +131,57 @@ describe("model picker", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("team planning", () => {
+  const PLAN = {
+    title: "Next.js demos: dashboard and settings",
+    rationale: "Two routes with no shared files.",
+    tasks: [
+      {
+        agent: "build",
+        title: "Dashboard route",
+        prompt: "Scaffold ./web with Next.js and Tailwind, then create app/dashboard/page.tsx.",
+      },
+      {
+        agent: "build",
+        title: "Settings route",
+        prompt: "Assume ./web exists. Create only app/settings/page.tsx and run `bun run build`.",
+      },
+    ],
+  };
+
+  test("a typed request shows the plan and esc cancels it without launching", async () => {
+    const setup = await mount(110, 40, mockModel(PLAN));
+    await act(async () => {
+      await setup.mockInput.typeText("build me a dashboard and a settings page");
+      setup.mockInput.pressEnter();
+    });
+
+    const shown = await setup.waitForFrame((value) => value.includes("Dashboard route"));
+    expect(shown).toContain("Next.js demos");
+    expect(shown).toContain("app/settings/page.tsx");
+    expect(shown).toContain("enter or y launches");
+
+    await act(async () => {
+      setup.mockInput.pressEscape();
+    });
+    const after = await setup.waitForFrame((value) => value.includes("plan discarded"));
+    expect(after).not.toContain("enter or y launches");
+    // Nothing was launched: the run table is still empty.
+    expect(after).toContain("0 runs");
+  });
+
+  test("a planner failure lands in the transcript, not in an overlay", async () => {
+    const setup = await mount(110, 34, mockModel("I would be glad to help"));
+    await act(async () => {
+      await setup.mockInput.typeText("do something vague");
+      setup.mockInput.pressEnter();
+    });
+
+    const frame = await setup.waitForFrame((value) => value.includes("could not plan"));
+    expect(frame).not.toContain("enter or y launches");
+    expect(frame).toContain("0 runs");
   });
 });

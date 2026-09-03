@@ -18,6 +18,7 @@ import {
 import type { Session, ShellBlock } from "../../src/shell/types.ts";
 import { makeTheme } from "../../src/ui/theme.ts";
 import { goOffline } from "../ai/offline.ts";
+import { mockModel } from "../ai/planner.test.ts";
 import { freshDb } from "../db/helpers.ts";
 
 /** ANSI escapes must never reach a shell block: every command renders plain text. */
@@ -65,11 +66,14 @@ describe("dispatch", () => {
     session.db.close();
   });
 
-  test("bare text is an error, not a silent prompt", async () => {
-    const session = makeSession();
+  test("bare text is a request for work, not an unknown command", async () => {
+    // A model that answers with prose keeps the test off the network *and*
+    // stops before anything is launched, while still proving the routing.
+    const session: Session = { ...makeSession(), plannerModel: mockModel("I can help with that") };
     const { blocks } = await dispatch(session, "write me a function");
     expect(blocks[0]!.kind).toBe("error");
-    expect(blocks[0]!.text).toContain("/help");
+    expect(blocks[0]!.text).toContain("could not plan");
+    expect(blocks[0]!.text).not.toContain("not a command");
     session.db.close();
   });
 
@@ -459,6 +463,84 @@ describe("/model", () => {
     expect(blocks[0]!.text).toContain("config.json");
 
     await rm(root, { recursive: true, force: true });
+    session.db.close();
+  });
+});
+
+describe("/team and bare text", () => {
+  /** The same canned plan for every case; the model is never really called. */
+  const PLAN = {
+    title: "Next.js demos: dashboard and settings",
+    rationale: "Two routes, no shared files, so they run in parallel.",
+    tasks: [
+      {
+        agent: "build",
+        title: "Dashboard route",
+        prompt:
+          "Scaffold ./web with Next.js App Router and Tailwind, then create app/dashboard/page.tsx and run `bun run build`.",
+      },
+      {
+        agent: "build",
+        title: "Settings route",
+        prompt:
+          "Assume ./web exists with Next.js and Tailwind. Create only app/settings/page.tsx and run `bun run build`.",
+      },
+    ],
+  };
+
+  function plannedSession(body: unknown = PLAN): Session {
+    return { ...makeSession(), plannerModel: mockModel(body) };
+  }
+
+  test("--dry-run shows every prompt and launches nothing", async () => {
+    const session = plannedSession();
+    const emitted: ShellBlock[] = [];
+    const { blocks } = await dispatch(session, "/team --dry-run build me two pages", (block) =>
+      emitted.push(block),
+    );
+
+    const text = blocks[0]!.text;
+    expect(blocks[0]!.kind).toBe("output");
+    expect(text).toContain("Next.js demos");
+    expect(text).toContain("app/dashboard/page.tsx");
+    expect(text).toContain("app/settings/page.tsx");
+    expect(text).toContain("nothing launched");
+    expect(hasAnsi(text)).toBe(false);
+    expect(emitted[0]!.text).toContain("planning a team");
+    // Nothing reached the engine, so no run was recorded.
+    expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+
+  test("bare text reaches the planner with the whole line intact", async () => {
+    const session = plannedSession("not a plan");
+    const emitted: ShellBlock[] = [];
+    const request = "Create a team of 2 agents for a dashboard and a --settings page";
+    const { blocks } = await dispatch(session, request, (block) => emitted.push(block));
+
+    // The whole line is the request: a stray `--flag` inside it is not parsed.
+    expect(emitted[0]!.text).toContain(request);
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("could not plan");
+    expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+
+  test("a request the model cannot shape into a plan is an error with a hint", async () => {
+    const session = plannedSession("sure, I can help with that!");
+    const { blocks } = await dispatch(session, "/team do something");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("could not plan");
+    expect(blocks[0]!.text).toContain("/model");
+    expect((await dispatch(session, "/runs")).blocks[0]!.text).toContain("(no runs)");
+    session.db.close();
+  });
+
+  test("an empty /team is a usage error before any model call", async () => {
+    const session = plannedSession();
+    const { blocks } = await dispatch(session, "/team");
+    expect(blocks[0]!.kind).toBe("error");
+    expect(blocks[0]!.text).toContain("usage: /team");
     session.db.close();
   });
 });

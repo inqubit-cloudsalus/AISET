@@ -56,14 +56,37 @@ export function hasCredentials(provider: ProviderName): boolean {
 }
 
 /**
- * Resolves the model to use from `.aiset/config.json`, overridable per call.
- * Reads the API key from the environment only — never from config, never logged.
+ * Reads the engine's `provider/model` id as one of AISET's own selections.
+ * Splits on the first slash, exactly like `splitModel` in the OpenCode client,
+ * so `openrouter/anthropic/claude-sonnet-4.5` keeps its vendor. Returns null
+ * when the prefix names no provider we can actually call.
+ */
+export function selectionFromEngineModel(id: string): ModelSelection | null {
+  const slash = id.indexOf("/");
+  if (slash <= 0 || slash === id.length - 1) return null;
+  const provider = id.slice(0, slash);
+  if (!(provider in PROVIDER_ENV)) return null;
+  return { provider: provider as ProviderName, model: id.slice(slash + 1) };
+}
+
+/**
+ * Resolves the model to use, overridable per call.
+ *
+ * The model chosen for runs (`opencode.model`, what `/model` writes) wins:
+ * one pick drives both the agents and AISET's own calls, which is the whole
+ * point of having a single model setting. It is only skipped when its key is
+ * absent, in which case the top-level `provider`/`model` pair answers instead.
+ * Keys are read from the environment only — never from config, never logged.
  */
 export async function resolveSelection(
   override: Partial<ModelSelection> = {},
   root = process.cwd(),
 ): Promise<ModelSelection> {
   const config = await readConfig(root).catch(() => null);
+  if (override.provider === undefined && override.model === undefined) {
+    const engine = config?.opencode.model ? selectionFromEngineModel(config.opencode.model) : null;
+    if (engine && hasCredentials(engine.provider)) return engine;
+  }
   const provider = override.provider ?? config?.provider ?? "anthropic";
   return { provider, model: override.model ?? config?.model ?? DEFAULT_MODEL[provider] };
 }

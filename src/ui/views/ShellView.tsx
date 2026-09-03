@@ -9,15 +9,19 @@ import {
 } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { planTeam, type TeamPlan } from "../../ai/planner.ts";
 import { readConfig } from "../../core/config.ts";
+import { AisetError } from "../../core/errors.ts";
 import { orphanNotice } from "../../opencode/recover.ts";
 import { dispatch } from "../../shell/commands.ts";
 import { promptCompletions } from "../../shell/prompt-state.ts";
 import { shellHeader } from "../../shell/session.ts";
+import { planToTasks, runGroup } from "../../shell/team.ts";
 import type { Session, ShellBlock } from "../../shell/types.ts";
 import { copyText } from "../clipboard.ts";
 import { colors, formatTimestamp } from "../theme.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
+import { TeamPlanView } from "./TeamPlanView.tsx";
 
 interface ShellViewProps {
   session: Session;
@@ -267,6 +271,7 @@ export function ShellView({ session }: ShellViewProps) {
   const [notice, setNotice] = useState("drag to select · release to copy");
   const [picker, setPicker] = useState(false);
   const [pickerCurrent, setPickerCurrent] = useState<string | null>(null);
+  const [plan, setPlan] = useState<TeamPlan | null>(null);
   const [header, setHeader] = useState(() => shellHeader(session));
 
   const narrow = dimensions.width < 86;
@@ -338,6 +343,66 @@ export function ShellView({ session }: ShellViewProps) {
     setPicker(true);
   }, [session]);
 
+  /** Serialises one unit of shell work, keeping the busy indicator honest. */
+  const enqueue = useCallback((work: () => Promise<void>) => {
+    pending.current += 1;
+    setBusy(true);
+    queue.current = queue.current
+      .then(work)
+      .catch(() => {})
+      .finally(() => {
+        pending.current -= 1;
+        if (pending.current === 0) setBusy(false);
+      });
+  }, []);
+
+  /**
+   * A line with no leading slash is a request for work: the model plans a team
+   * from it, and the plan is shown for approval before an agent touches a file.
+   */
+  const planRequest = useCallback(
+    (line: string) => {
+      enqueue(async () => {
+        try {
+          setPlan(
+            await planTeam(line, {
+              model: session.plannerModel,
+              root: session.ctx.paths.root,
+            }),
+          );
+        } catch (err) {
+          const hint = err instanceof AisetError && err.hint ? `\n› ${err.hint}` : "";
+          append([
+            {
+              kind: "error",
+              text: `team: ${err instanceof Error ? err.message : String(err)}${hint}`,
+            },
+          ]);
+        }
+      });
+    },
+    [append, enqueue, session],
+  );
+
+  const launchPlan = useCallback(
+    (approved: TeamPlan) => {
+      setPlan(null);
+      enqueue(async () => {
+        const emit = (block: ShellBlock) => append([block]);
+        const config = await readConfig(session.ctx.paths.root).catch(() => null);
+        const result = await runGroup(session, planToTasks(approved, config?.opencode), emit, {
+          wait: false,
+          title: approved.title,
+          oc: config?.opencode,
+          label: "team",
+        });
+        append(result.blocks);
+        setHeader(shellHeader(session));
+      });
+    },
+    [append, enqueue, session],
+  );
+
   const submit = useCallback(
     (raw: string) => {
       const line = raw.trim();
@@ -354,28 +419,27 @@ export function ShellView({ session }: ShellViewProps) {
       setValue("");
       setInputValue(inputRef.current, "");
       append([{ kind: "input", text: line }]);
-      setBusy(true);
       setFollowing(true);
       setTimeout(toBottom, 0);
-      pending.current += 1;
-      queue.current = queue.current
-        .then(() => dispatch(session, line, (block) => append([block])))
-        .then((result) => {
-          if (result.effect === "clear") {
-            setBlocks([]);
-            setSelected(null);
-          } else {
-            append(result.blocks);
-          }
-          if (result.effect === "exit") renderer.destroy();
-          setHeader(shellHeader(session));
-        })
-        .finally(() => {
-          pending.current -= 1;
-          if (pending.current === 0) setBusy(false);
-        });
+
+      if (!line.startsWith("/")) {
+        planRequest(line);
+        return;
+      }
+
+      enqueue(async () => {
+        const result = await dispatch(session, line, (block) => append([block]));
+        if (result.effect === "clear") {
+          setBlocks([]);
+          setSelected(null);
+        } else {
+          append(result.blocks);
+        }
+        if (result.effect === "exit") renderer.destroy();
+        setHeader(shellHeader(session));
+      });
     },
-    [append, openPicker, renderer, session, toBottom],
+    [append, enqueue, openPicker, planRequest, renderer, session, toBottom],
   );
 
   const copySelection = useCallback(async () => {
@@ -427,11 +491,12 @@ export function ShellView({ session }: ShellViewProps) {
   }, [completions, value]);
 
   useKeyboard((key) => {
-    // While the picker is mounted it owns the keyboard: the prompt's history,
+    // While an overlay is mounted it owns the keyboard: the prompt's history,
     // completion and scroll bindings would otherwise fight its own.
-    if (picker) {
+    if (picker || plan) {
       if (key.ctrl && key.name === "c") {
         setPicker(false);
+        setPlan(null);
         key.preventDefault();
         key.stopPropagation();
       }
@@ -666,6 +731,17 @@ export function ShellView({ session }: ShellViewProps) {
         </text>
       </box>
 
+      {plan && (
+        <TeamPlanView
+          plan={plan}
+          onApprove={() => launchPlan(plan)}
+          onCancel={() => {
+            setPlan(null);
+            append([{ kind: "output", text: "plan discarded — nothing launched" }]);
+          }}
+        />
+      )}
+
       {picker && (
         <ModelPicker
           current={pickerCurrent}
@@ -699,9 +775,9 @@ export function ShellView({ session }: ShellViewProps) {
           </text>
           <input
             ref={inputRef}
-            focused={!picker}
+            focused={!picker && !plan}
             value={value}
-            placeholder="Type /help or /launch <prompt>"
+            placeholder="Describe the work to plan a team, or type /help"
             onInput={setValue}
             onSubmit={() => submit(inputRef.current?.value ?? value)}
             style={{

@@ -1,3 +1,4 @@
+import type { LanguageModel } from "ai";
 import type { Context } from "../cli/context.ts";
 import type { Db } from "../db/client.ts";
 import type { Theme } from "../ui/theme.ts";
@@ -12,6 +13,11 @@ export interface Session {
   db: Db;
   theme: Theme;
   version: string;
+  /**
+   * Overrides the model the planner would resolve from config. Left unset in
+   * production; it exists so a test can plan without a network call.
+   */
+  plannerModel?: LanguageModel;
 }
 
 /** A committed line-block in the transcript. `text` is already rendered plain text. */
